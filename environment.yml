@@ -1,0 +1,11 @@
+name: infratrack
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - streamlit
+  - pandas
+  - plotly-express
+  - python-mpxj
