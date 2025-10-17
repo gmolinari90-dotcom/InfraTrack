@@ -7,18 +7,20 @@ WORKDIR /app
 # Fase 3: Copiamo il file di configurazione dell'ambiente Conda
 COPY environment.yml .
 
-# Fase 4: Creiamo l'ambiente Conda. Il file yml ora contiene tutte le info corrette.
+# Fase 4: Creiamo l'ambiente Conda.
 RUN mamba env create -f environment.yml
 
-# Fase 5: Attiviamo la shell per eseguire i comandi DENTRO il nostro ambiente Conda
-SHELL ["conda", "run", "-n", "infratrack", "/bin/bash", "-c"]
-
-# Fase 6: Copiamo il resto del codice della nostra applicazione
+# Fase 5: Copiamo il nostro script di avvio e il resto del codice
 COPY . .
 
-# Fase 7: Esponiamo la porta che Streamlit usa di default
+# Fase 6: Rendiamo lo script di avvio eseguibile
+RUN chmod +x /app/entrypoint.sh
+
+# Fase 7: Definiamo il "capocantiere" del nostro container
+ENTRYPOINT ["/app/entrypoint.sh"]
+
+# Fase 8: Definiamo la porta
 EXPOSE 8501
 
-# Fase 8: Definiamo il comando per avviare l'applicazione (formato shell)
-# QUESTA E' LA CORREZIONE FINALE
-CMD conda run -n infratrack streamlit run app.py
+# Fase 9: Definiamo il comando da passare al capocantiere
+CMD ["streamlit", "run", "app.py"]
