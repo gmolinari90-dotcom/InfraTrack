@@ -3,12 +3,11 @@ from lxml import etree
 import pandas as pd
 from datetime import datetime
 
-# --- CONFIGURAZIONE DELLA PAGINA (con versione) ---
-st.set_page_config(page_title="InfraTrack v0.4", page_icon="🚆", layout="wide")
+# --- CONFIGURAZIONE DELLA PAGINA ---
+st.set_page_config(page_title="InfraTrack v0.5", page_icon="🚆", layout="wide")
 
 # --- TITOLO E HEADER (con versione) ---
-# QUESTA E' LA RIGA MODIFICATA
-st.title("🚆 InfraTrack v0.4")
+st.title("🚆 InfraTrack v0.5")
 st.subheader("La tua centrale di controllo per progetti infrastrutturali")
 
 placeholder = st.empty()
@@ -34,19 +33,29 @@ if uploaded_file is not None:
             st.markdown("---")
             st.header("📄 Informazioni Generali del Progetto")
 
+            # --- NUOVA LOGICA DI ESTRAZIONE: SCANSIONE MANUALE ---
+            
             project_name = "Attività con UID 1 non trovata"
             formatted_cost = "€ 0,00"
-
-            # Trova l'attività specifica con UID = 1
-            task_uid_1 = tree.find(".//msp:Task[msp:UID='1']", namespaces=ns)
             
-            if task_uid_1 is not None:
-                # Estrai Nome e Costo da QUESTA specifica attività
-                project_name = task_uid_1.findtext('msp:Name', namespaces=ns) or "Nome non trovato"
+            # 1. Prendiamo TUTTE le attività del progetto
+            all_tasks = tree.findall('.//msp:Task', namespaces=ns)
+            
+            # 2. Le controlliamo una per una
+            for task in all_tasks:
+                # Estraiamo l'UID di questa attività
+                uid = task.findtext('msp:UID', namespaces=ns)
                 
-                total_cost_str = task_uid_1.findtext('msp:Cost', namespaces=ns) or "0"
-                total_cost = float(total_cost_str)
-                formatted_cost = f"€ {total_cost:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                # 3. Se l'UID è '1', prendiamo i dati e ci fermiamo
+                if uid == '1':
+                    project_name = task.findtext('msp:Name', namespaces=ns) or "Nome non trovato"
+                    
+                    total_cost_str = task.findtext('msp:Cost', namespaces=ns) or "0"
+                    total_cost = float(total_cost_str)
+                    formatted_cost = f"€ {total_cost:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                    
+                    # FONDAMENTALE: Usciamo dal ciclo appena trovata la nostra attività
+                    break 
 
             col1, col2 = st.columns(2)
             with col1:
@@ -54,12 +63,11 @@ if uploaded_file is not None:
             with col2:
                 st.metric(label="Importo Totale Lavori", value=formatted_cost)
 
-            # Estrazione TUP e TUF
+            # Estrazione TUP e TUF (logica invariata)
             st.subheader("🗓️ Milestone Principali (TUP e TUF)")
             milestones_data = []
-            all_tasks = tree.findall('.//msp:Task', namespaces=ns)
             
-            for task in all_tasks:
+            for task in all_tasks: # Usiamo la stessa lista di attività già caricata
                 is_milestone_text = (task.findtext('msp:Milestone', namespaces=ns) or '0').lower()
                 is_milestone = is_milestone_text == '1' or is_milestone_text == 'true'
                 
