@@ -12,6 +12,7 @@ WORKDIR /app
 
 # Fase 4: Copiamo i file dei requisiti e li installiamo
 COPY requirements.txt .
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Fase 5: Copiamo il resto del codice della nostra applicazione
