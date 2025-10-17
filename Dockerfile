@@ -4,26 +4,21 @@ FROM condaforge/mambaforge:latest
 # Fase 2: Impostiamo la cartella di lavoro
 WORKDIR /app
 
-# --- STRATEGIA A DUE FASI ---
-
-# FASE 1: Creare l'ambiente base con Conda e il pacchetto complesso
+# Fase 3: Copiamo il file di configurazione dell'ambiente Conda
 COPY environment.yml .
-RUN mamba env create -f environment.yml
 
-# FASE 2: Installare i pacchetti restanti con Pip dentro l'ambiente appena creato
-COPY app.py . # Copiamo un file dummy per creare lo strato dopo
-RUN conda run -n infratrack pip install streamlit pandas plotly
+# Fase 4: Creiamo l'ambiente Conda forzando l'uso del canale conda-forge
+# Questa è la correzione chiave: il flag "-c conda-forge" forza la ricerca sul canale corretto
+RUN mamba env create -f environment.yml -c conda-forge
 
-# --- CONFIGURAZIONE FINALE ---
-
-# Fase 3: Attiviamo la shell per eseguire i comandi DENTRO il nostro ambiente Conda
+# Fase 5: Attiviamo la shell per eseguire i comandi DENTRO il nostro ambiente Conda
 SHELL ["conda", "run", "-n", "infratrack", "/bin/bash", "-c"]
 
-# Fase 4: Copiamo il resto del codice della nostra applicazione
+# Fase 6: Copiamo il resto del codice della nostra applicazione
 COPY . .
 
-# Fase 5: Esponiamo la porta che Streamlit usa di default
+# Fase 7: Esponiamo la porta che Streamlit usa di default
 EXPOSE 8501
 
-# Fase 6: Definiamo il comando per avviare l'applicazione
+# Fase 8: Definiamo il comando per avviare l'applicazione
 CMD ["streamlit", "run", "app.py"]
