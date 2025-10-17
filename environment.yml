@@ -4,3 +4,7 @@ channels:
 dependencies:
   - python=3.10
   - pip
+  - streamlit
+  - pandas
+  - plotly
+  - lxml  # La nostra nuova, affidabile libreria per leggere XML
