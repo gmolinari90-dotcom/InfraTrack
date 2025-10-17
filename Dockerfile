@@ -10,17 +10,17 @@ COPY environment.yml .
 # Fase 4: Creiamo l'ambiente Conda.
 RUN mamba env create -f environment.yml
 
-# Fase 5: Copiamo il nostro script di avvio e il resto del codice
+# Fase 5: Copiamo tutto il resto (il nostro codice e lo script di avvio)
 COPY . .
 
 # Fase 6: Rendiamo lo script di avvio eseguibile
 RUN chmod +x /app/entrypoint.sh
 
-# Fase 7: Definiamo il "capocantiere" del nostro container
+# Fase 7: Definiamo lo script come punto di ingresso del container
 ENTRYPOINT ["/app/entrypoint.sh"]
 
 # Fase 8: Definiamo la porta
 EXPOSE 8501
 
-# Fase 9: Definiamo il comando da passare al capocantiere
+# Fase 9: Definiamo il comando da passare all'entrypoint
 CMD ["streamlit", "run", "app.py"]
