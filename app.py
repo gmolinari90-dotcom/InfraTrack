@@ -31,23 +31,25 @@ if uploaded_file is not None:
             st.markdown("---")
             st.header("📄 Informazioni Generali del Progetto")
 
-            # --- ESTRAZIONE DATI MIGLIORATA ---
+            # --- ESTRAZIONE DATI SECONDO LE NUOVE ISTRUZIONI ---
 
-            # Troviamo la "Project Summary Task" (attività con UID 0), che contiene i dati di riepilogo
-            summary_task = root.find(".//msp:Task[msp:UID='0']", namespaces=ns)
+            project_name = "Nome non trovato"
+            formatted_cost = "€ 0,00"
 
-            if summary_task is not None:
-                # 1. Nome Appalto (preso dal nome della Project Summary Task)
-                project_name = summary_task.findtext('msp:Name', namespaces=ns) or "Nome non trovato"
+            # Troviamo il contenitore di tutte le attività <Tasks>
+            tasks_container = root.find('msp:Tasks', namespaces=ns)
+            if tasks_container is not None:
+                # Troviamo la PRIMA attività nel file
+                first_task = tasks_container.find('msp:Task', namespaces=ns)
+                
+                if first_task is not None:
+                    # 1. Nome Appalto (preso dal campo "Nome" della PRIMA attività)
+                    project_name = first_task.findtext('msp:Name', namespaces=ns) or "Nome non trovato"
 
-                # 2. Importo Totale Lavori (preso dal costo della Project Summary Task)
-                total_cost_str = summary_task.findtext('msp:Cost', namespaces=ns) or "0"
-                total_cost = float(total_cost_str)
-                formatted_cost = f"€ {total_cost:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            else:
-                # Fallback nel caso (improbabile) in cui l'attività 0 non venga trovata
-                project_name = "Riepilogo progetto non trovato"
-                formatted_cost = "€ 0,00"
+                    # 2. Importo Totale Lavori (preso dal campo "Costo" della STESSA attività)
+                    total_cost_str = first_task.findtext('msp:Cost', namespaces=ns) or "0"
+                    total_cost = float(total_cost_str)
+                    formatted_cost = f"€ {total_cost:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
             # Mostriamo le info in due colonne
             col1, col2 = st.columns(2)
@@ -60,15 +62,17 @@ if uploaded_file is not None:
             st.subheader("🗓️ Milestone Principali (TUP e TUF)")
 
             milestones_data = []
-            # Troviamo TUTTE le attività nel progetto
-            for task in root.findall('.//msp:Task', namespaces=ns):
-                # Controlliamo se è una milestone (il valore può essere '1' o 'true')
+            # Troviamo TUTTE le attività nel progetto per cercare le milestone
+            all_tasks = root.findall('.//msp:Task', namespaces=ns)
+            
+            for task in all_tasks:
                 is_milestone_text = (task.findtext('msp:Milestone', namespaces=ns) or '0').lower()
                 is_milestone = is_milestone_text == '1' or is_milestone_text == 'true'
                 
                 task_name_element = task.find('msp:Name', namespaces=ns)
                 task_name = task_name_element.text if task_name_element is not None else ""
                 
+                # Cerchiamo TUP o TUF nel campo "Nome"
                 if is_milestone and ("TUP" in task_name.upper() or "TUF" in task_name.upper()):
                     start_date_str = task.findtext('msp:Start', namespaces=ns)
                     finish_date_str = task.findtext('msp:Finish', namespaces=ns)
