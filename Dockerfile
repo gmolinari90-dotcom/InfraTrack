@@ -1,25 +1,25 @@
-# Fase 1: Scegliamo un'immagine base ufficiale di Python
-FROM python:3.11.9-slim
+# Fase 1: Partiamo da un'immagine base ufficiale di Conda/Mamba
+# Mamba è un'implementazione più veloce di Conda
+FROM condaforge/mambaforge:latest
 
-# Fase 2: Installiamo le dipendenze di sistema (Java e strumenti di build)
-RUN apt-get update && apt-get install -y default-jre build-essential && apt-get clean
-
-# Imposta la variabile d'ambiente JAVA_HOME per una migliore compatibilità
-ENV JAVA_HOME /usr/lib/jvm/java-17-openjdk-amd64
-
-# Fase 3: Impostiamo la cartella di lavoro all'interno del container
+# Fase 2: Impostiamo la cartella di lavoro
 WORKDIR /app
 
-# Fase 4: Copiamo i file dei requisiti e li installiamo
-COPY requirements.txt .
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+# Fase 3: Copiamo il file di configurazione dell'ambiente Conda
+COPY environment.yml .
 
-# Fase 5: Copiamo il resto del codice della nostra applicazione
+# Fase 4: Creiamo l'ambiente Conda e installiamo TUTTE le dipendenze in un colpo solo
+# Mamba/Conda gestirà Python, Java (come dipendenza di python-mpxj), e le librerie Python
+RUN mamba env create -f environment.yml
+
+# Fase 5: Attiviamo la shell per eseguire i comandi DENTRO il nostro ambiente Conda
+SHELL ["conda", "run", "-n", "infratrack", "/bin/bash", "-c"]
+
+# Fase 6: Copiamo il resto del codice della nostra applicazione
 COPY . .
 
-# Fase 6: Esponiamo la porta che Streamlit usa di default
+# Fase 7: Esponiamo la porta che Streamlit usa di default
 EXPOSE 8501
 
-# Fase 7: Definiamo il comando per avviare l'applicazione quando il container parte
+# Fase 8: Definiamo il comando per avviare l'applicazione
 CMD ["streamlit", "run", "app.py"]
