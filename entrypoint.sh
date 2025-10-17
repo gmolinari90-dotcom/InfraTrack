@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-# Attiva l'ambiente Conda
-conda activate infratrack
+# Usa 'source activate', il comando corretto per gli script non interattivi
+source activate infratrack
 
-# Esegui il comando passato dal Dockerfile
+# Esegui il comando che viene passato dal Dockerfile
 exec "$@"
