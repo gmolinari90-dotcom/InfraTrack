@@ -31,14 +31,23 @@ if uploaded_file is not None:
             st.markdown("---")
             st.header("📄 Informazioni Generali del Progetto")
 
-            # 1. Nome Appalto (dal campo di riepilogo del progetto)
-            # Usiamo findtext per trovare il testo dell'elemento 'Title'
-            project_name = root.findtext('msp:Title', namespaces=ns) or "Nome non trovato"
+            # --- ESTRAZIONE DATI MIGLIORATA ---
 
-            # 2. Importo Totale Lavori (dal campo 'Cost' di riepilogo)
-            total_cost_str = root.findtext('msp:Cost', namespaces=ns) or "0"
-            total_cost = float(total_cost_str)
-            formatted_cost = f"€ {total_cost:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            # Troviamo la "Project Summary Task" (attività con UID 0), che contiene i dati di riepilogo
+            summary_task = root.find(".//msp:Task[msp:UID='0']", namespaces=ns)
+
+            if summary_task is not None:
+                # 1. Nome Appalto (preso dal nome della Project Summary Task)
+                project_name = summary_task.findtext('msp:Name', namespaces=ns) or "Nome non trovato"
+
+                # 2. Importo Totale Lavori (preso dal costo della Project Summary Task)
+                total_cost_str = summary_task.findtext('msp:Cost', namespaces=ns) or "0"
+                total_cost = float(total_cost_str)
+                formatted_cost = f"€ {total_cost:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            else:
+                # Fallback nel caso (improbabile) in cui l'attività 0 non venga trovata
+                project_name = "Riepilogo progetto non trovato"
+                formatted_cost = "€ 0,00"
 
             # Mostriamo le info in due colonne
             col1, col2 = st.columns(2)
@@ -51,18 +60,19 @@ if uploaded_file is not None:
             st.subheader("🗓️ Milestone Principali (TUP e TUF)")
 
             milestones_data = []
-            # Troviamo TUTTE le attività nel progetto usando .// per la ricerca ricorsiva
+            # Troviamo TUTTE le attività nel progetto
             for task in root.findall('.//msp:Task', namespaces=ns):
-                # Controlliamo se è una milestone ('1' significa True) e se il nome contiene TUP o TUF
-                is_milestone = task.findtext('msp:Milestone', namespaces=ns) == '1'
-                task_name = task.findtext('msp:Name', namespaces=ns) or ""
+                # Controlliamo se è una milestone (il valore può essere '1' o 'true')
+                is_milestone_text = (task.findtext('msp:Milestone', namespaces=ns) or '0').lower()
+                is_milestone = is_milestone_text == '1' or is_milestone_text == 'true'
+                
+                task_name_element = task.find('msp:Name', namespaces=ns)
+                task_name = task_name_element.text if task_name_element is not None else ""
                 
                 if is_milestone and ("TUP" in task_name.upper() or "TUF" in task_name.upper()):
-                    # Estraiamo le date e le formattiamo
                     start_date_str = task.findtext('msp:Start', namespaces=ns)
                     finish_date_str = task.findtext('msp:Finish', namespaces=ns)
                     
-                    # La data è in formato 'YYYY-MM-DDTHH:MM:SS', prendiamo solo la parte della data
                     start_date = datetime.fromisoformat(start_date_str).date() if start_date_str else "N/D"
                     finish_date = datetime.fromisoformat(finish_date_str).date() if finish_date_str else "N/D"
 
@@ -72,7 +82,6 @@ if uploaded_file is not None:
                         "Data Fine": finish_date
                     })
             
-            # Se abbiamo trovato milestone, le mostriamo in una tabella (DataFrame di Pandas)
             if milestones_data:
                 df_milestones = pd.DataFrame(milestones_data)
                 st.dataframe(df_milestones, use_container_width=True)
@@ -81,4 +90,4 @@ if uploaded_file is not None:
 
         except Exception as e:
             st.error(f"Errore durante l'analisi del file XML: {e}")
-            st.error("Il file potrebbe essere corrotto o in un formato non valido.")
+            st.error("Il file potrebbe essere corrotto o in un formato non valido. Assicurati che sia stato esportato correttamente da MS Project.")
