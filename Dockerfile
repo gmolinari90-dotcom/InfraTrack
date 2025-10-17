@@ -7,7 +7,7 @@ WORKDIR /app
 # Fase 3: Copiamo il file di configurazione dell'ambiente Conda
 COPY environment.yml .
 
-# Fase 4: Creiamo l'ambiente Conda. Ora il solver troverà tutti i pacchetti compatibili.
+# Fase 4: Creiamo l'ambiente Conda. Il file yml ora contiene tutte le info corrette.
 RUN mamba env create -f environment.yml
 
 # Fase 5: Attiviamo la shell per eseguire i comandi DENTRO il nostro ambiente Conda
