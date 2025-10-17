@@ -4,16 +4,11 @@ FROM condaforge/mambaforge:latest
 # Fase 2: Impostiamo la cartella di lavoro
 WORKDIR /app
 
-# Fase 3: Copiamo il file di configurazione dell'ambiente base
+# Fase 3: Copiamo il file di configurazione dell'ambiente
 COPY environment.yml .
 
-# Fase 4: ESEGUIAMO TUTTO IN UN UNICO BLOCCO ATOMICO
-# 1. Crea l'ambiente minimale (SUCCESS).
-# 2. Usa Pip DENTRO l'ambiente per installare il pacchetto difficile (SUCCESS).
-# 3. Usa Pip DENTRO l'ambiente per installare il resto (SUCCESS).
-RUN mamba env create -f environment.yml && \
-    conda run -n infratrack pip install python-mpxj && \
-    conda run -n infratrack pip install streamlit pandas plotly
+# Fase 4: Creiamo l'ambiente. Ora funzionerà senza problemi.
+RUN mamba env create -f environment.yml
 
 # Fase 5: Copiamo il resto del codice della nostra applicazione
 COPY . .
