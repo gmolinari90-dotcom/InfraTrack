@@ -1,8 +1,8 @@
 name: infratrack
-channels:
-  - conda-forge
-channel_priority: strict
 dependencies:
   - python=3.11
   - pip
+  - streamlit
+  - pandas
+  - plotly
   - python-mpxj
