@@ -7,11 +7,10 @@ WORKDIR /app
 # Fase 3: Copiamo il file di configurazione dell'ambiente Conda
 COPY environment.yml .
 
-# Fase 4: Creiamo l'ambiente Conda. Ora il solver troverà tutti i pacchetti compatibili.
+# Fase 4: Creiamo l'ambiente Conda. Il file yml ora contiene tutte le info corrette.
 RUN mamba env create -f environment.yml
 
 # Fase 5: Attiviamo la shell per eseguire i comandi DENTRO il nostro ambiente Conda
-# NOTA: Questo SHELL influenza i comandi RUN, ma non il CMD finale.
 SHELL ["conda", "run", "-n", "infratrack", "/bin/bash", "-c"]
 
 # Fase 6: Copiamo il resto del codice della nostra applicazione
@@ -20,6 +19,6 @@ COPY . .
 # Fase 7: Esponiamo la porta che Streamlit usa di default
 EXPOSE 8501
 
-# Fase 8: Definiamo il comando per avviare l'applicazione
-# QUESTA E' LA CORREZIONE: Eseguiamo streamlit DENTRO l'ambiente infratrack
-CMD ["conda", "run", "-n", "infratrack", "streamlit", "run", "app.py"]
+# Fase 8: Definiamo il comando per avviare l'applicazione (formato shell)
+# QUESTA E' LA CORREZIONE FINALE
+CMD conda run -n infratrack streamlit run app.py
