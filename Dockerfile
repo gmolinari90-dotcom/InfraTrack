@@ -1,21 +1,32 @@
-# Fase 1: Partiamo da un'immagine base ufficiale di Conda/Mamba
+# Fase 1: Partiamo da un'immagine base stabile di Conda
 FROM condaforge/mambaforge:latest
 
 # Fase 2: Impostiamo la cartella di lavoro
 WORKDIR /app
 
-# Fase 3: Copiamo il file di configurazione dell'ambiente Conda
-COPY environment.yml .
+# --- STRATEGIA "ISOLA E CONQUISTA" ---
 
-# Fase 4: Creiamo l'ambiente Conda. Questa fase ha già avuto successo.
+# FASE A: Creare un ambiente base MINIMALE con Conda
+COPY environment.yml .
 RUN mamba env create -f environment.yml
 
-# Fase 5: Copiamo il resto del codice della nostra applicazione
+# FASE B: Usare Pip DENTRO l'ambiente per installare le librerie in due passaggi separati
+# Questo bypassa il "solver" di Conda per i pacchetti in conflitto.
+
+# 1. Installiamo prima il pacchetto problematico e le sue dipendenze
+RUN conda run -n infratrack pip install python-mpxj
+
+# 2. Poi installiamo il resto dell'ecosistema moderno
+RUN conda run -n infratrack pip install streamlit pandas plotly
+
+# --- CONFIGURAZIONE FINALE ---
+
+# Fase 3: Copiamo il resto del codice della nostra applicazione
 COPY . .
 
-# Fase 6: Definiamo la porta
+# Fase 4: Definiamo la porta
 EXPOSE 8501
 
-# Fase 7: Definiamo il comando di avvio usando il PERCORSO ASSOLUTO all'eseguibile
-# Questa è la soluzione definitiva. Nessuna ambiguità.
+# Fase 5: Definiamo il comando di avvio usando il PERCORSO ASSOLUTO all'eseguibile
+# Questa è la forma più robusta e a prova di errore.
 CMD ["/opt/conda/envs/infratrack/bin/streamlit", "run", "app.py"]
