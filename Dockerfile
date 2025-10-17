@@ -1,25 +1,29 @@
 # Fase 1: Partiamo da un'immagine base ufficiale di Conda/Mamba
-# Mamba è un'implementazione più veloce di Conda
 FROM condaforge/mambaforge:latest
 
 # Fase 2: Impostiamo la cartella di lavoro
 WORKDIR /app
 
-# Fase 3: Copiamo il file di configurazione dell'ambiente Conda
-COPY environment.yml .
+# --- STRATEGIA A DUE FASI ---
 
-# Fase 4: Creiamo l'ambiente Conda e installiamo TUTTE le dipendenze in un colpo solo
-# Mamba/Conda gestirà Python, Java (come dipendenza di python-mpxj), e le librerie Python
+# FASE 1: Creare l'ambiente base con Conda e il pacchetto complesso
+COPY environment.yml .
 RUN mamba env create -f environment.yml
 
-# Fase 5: Attiviamo la shell per eseguire i comandi DENTRO il nostro ambiente Conda
+# FASE 2: Installare i pacchetti restanti con Pip dentro l'ambiente appena creato
+COPY app.py . # Copiamo un file dummy per creare lo strato dopo
+RUN conda run -n infratrack pip install streamlit pandas plotly
+
+# --- CONFIGURAZIONE FINALE ---
+
+# Fase 3: Attiviamo la shell per eseguire i comandi DENTRO il nostro ambiente Conda
 SHELL ["conda", "run", "-n", "infratrack", "/bin/bash", "-c"]
 
-# Fase 6: Copiamo il resto del codice della nostra applicazione
+# Fase 4: Copiamo il resto del codice della nostra applicazione
 COPY . .
 
-# Fase 7: Esponiamo la porta che Streamlit usa di default
+# Fase 5: Esponiamo la porta che Streamlit usa di default
 EXPOSE 8501
 
-# Fase 8: Definiamo il comando per avviare l'applicazione
+# Fase 6: Definiamo il comando per avviare l'applicazione
 CMD ["streamlit", "run", "app.py"]
