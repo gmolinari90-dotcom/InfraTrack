@@ -1,4 +1,4 @@
-# --- v9.0 (Ripristino Base Stabile v5.3 + Selezione Date) ---
+# --- v9.1 (Base Stabile Definitiva + Selezione Date) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -9,12 +9,13 @@ from io import BytesIO
 import math
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v9.0", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v9.1", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
+# ... (CSS Identico a v9.0 - omesso per brevità) ...
 st.markdown("""
 <style>
-    /* Stili CSS stabili (omesso per brevità) */
+    /* ... */
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button { font-size: 0.85rem !important; }
     .stApp h2 { font-size: 1.5rem !important; }
     .stApp .stMarkdown h4 { font-size: 1.1rem !important; margin-bottom: 0.5rem; margin-top: 1rem; }
@@ -31,7 +32,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v9.0") # Version updated
+st.markdown("## 🚆 InfraTrack v9.1") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
@@ -39,27 +40,41 @@ if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_cou
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 if st.button("🔄", key="reset_button", help="Resetta l'analisi", disabled=not st.session_state.file_processed_success):
     st.session_state.widget_key_counter += 1; st.session_state.file_processed_success = False
-    keys_to_reset = ['uploaded_file_state', 'project_name', 'formatted_cost','df_milestones_display', 'debug_raw_text', 'project_start_date','project_finish_date', 'minutes_per_day', 'all_tasks_data']
+    # Rimuovi TUTTE le chiavi salvate per un reset pulito
+    keys_to_reset = list(st.session_state.keys()) # Prendi tutte le chiavi attuali
     for key in keys_to_reset:
-        if key in st.session_state: del st.session_state[key]
+        # Non cancellare chiavi interne di Streamlit
+        if not key.startswith("_"):
+             del st.session_state[key]
+    st.session_state.widget_key_counter = 1 # Reimposta il contatore chiave
+    st.session_state.file_processed_success = False # Reimposta flag
     st.rerun()
 
 
 # --- CARICAMENTO FILE ---
 st.markdown("---"); st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
+# Forza il rerender del widget cambiando la chiave dopo il reset
 uploaded_file = st.file_uploader("Seleziona il file .XML...", type=["xml"], label_visibility="collapsed", key=uploader_key)
 if st.session_state.file_processed_success and 'uploaded_file_state' in st.session_state : st.success('File XML analizzato con successo!')
-if uploaded_file is not None: st.session_state['uploaded_file_state'] = uploaded_file
-elif 'uploaded_file_state' in st.session_state: uploaded_file = st.session_state['uploaded_file_state']
+# Gestione stato file (necessaria perché st.rerun mantiene lo stato dei widget se la key non cambia)
+if uploaded_file is not None and uploaded_file != st.session_state.get('uploaded_file_state'):
+     st.session_state['uploaded_file_state'] = uploaded_file
+     # Se carichiamo un NUOVO file, resettiamo lo stato di processamento
+     st.session_state.file_processed_success = False
+elif 'uploaded_file_state' not in st.session_state:
+     # Caso iniziale o dopo reset VERO
+     uploaded_file = None
+
 
 # --- INIZIO ANALISI ---
-if uploaded_file is not None:
-    if not st.session_state.file_processed_success:
+current_file_to_process = st.session_state.get('uploaded_file_state') # Usa sempre il file in sessione
+
+if current_file_to_process is not None:
+    if not st.session_state.get('file_processed_success', False): # Usa .get() per sicurezza
         with st.spinner('Caricamento e analisi completa del file in corso...'):
             try:
-                # --- Logica parsing e estrazione dati come in v5.3 ---
-                uploaded_file.seek(0); file_content_bytes = uploaded_file.read()
+                current_file_to_process.seek(0); file_content_bytes = current_file_to_process.read()
                 parser = etree.XMLParser(recover=True); tree = etree.fromstring(file_content_bytes, parser=parser)
                 ns = {'msp': 'http://schemas.microsoft.com/project'}
                 project_name = "N/D"; formatted_cost = "€ 0,00"; project_start_date = None; project_finish_date = None; minutes_per_day = 480
@@ -115,22 +130,19 @@ if uploaded_file is not None:
                     wbs = task.findtext('msp:WBS', namespaces=ns) or ""
                     total_slack_minutes_str = task.findtext('msp:TotalSlack', namespaces=ns) or "0"
 
-                    # --- CALCOLO SLACK CON try/except CORRETTO ---
                     total_slack_days = 0
                     if total_slack_minutes_str:
-                        try: # Blocco try
+                        try:
                             slack_minutes = float(total_slack_minutes_str)
                             mpd = st.session_state.get('minutes_per_day', 480)
                             if mpd > 0:
                                 total_slack_days = math.ceil(slack_minutes / mpd)
-                        except ValueError: # Blocco except CORRETTAMENTE ALLINEATO
+                        except ValueError:
                             total_slack_days = 0
-                    # --- FINE CALCOLO SLACK ---
 
                     if uid != '0':
                          all_tasks_data_list.append({"UID": uid, "Name": name, "Start": start_date, "Finish": finish_date, "Duration": duration_formatted, "Cost": cost_euros, "Milestone": is_milestone, "WBS": wbs, "TotalSlackDays": total_slack_days})
 
-                    # Logica TUP/TUF (con indentazione CORRETTA)
                     match = tup_tuf_pattern.search(name)
                     if match:
                          tup_tuf_key = match.group(0).upper().strip(); duration_str_tup = task.findtext('msp:Duration', namespaces=ns)
@@ -141,44 +153,53 @@ if uploaded_file is not None:
                          except Exception: duration_seconds = 0
                          is_pure_milestone_duration = (duration_seconds == 0)
                          start_date_formatted = start_date.strftime("%d/%m/%Y") if start_date else "N/D"; finish_date_formatted = finish_date.strftime("%d/%m/%Y") if finish_date else "N/D"
+                         # Assicurati che 'start_date' (oggetto date) sia sempre presente per DataInizioObj
                          current_task_data = {"Nome Completo": name, "Data Inizio": start_date_formatted, "Data Fine": finish_date_formatted, "Durata": duration_formatted, "DurataSecondi": duration_seconds, "DataInizioObj": start_date}
                          existing_duration_seconds = potential_milestones.get(tup_tuf_key, {}).get("DurataSecondi", -1)
-
-                         if tup_tuf_key not in potential_milestones:
-                              potential_milestones[tup_tuf_key] = current_task_data
+                         if tup_tuf_key not in potential_milestones: potential_milestones[tup_tuf_key] = current_task_data
                          elif not is_pure_milestone_duration:
-                              if existing_duration_seconds == 0:
-                                   potential_milestones[tup_tuf_key] = current_task_data
-                              elif duration_seconds > existing_duration_seconds:
-                                   # Indentazione CORRETTA
-                                   potential_milestones[tup_tuf_key] = current_task_data
+                              if existing_duration_seconds == 0: potential_milestones[tup_tuf_key] = current_task_data
+                              elif duration_seconds > existing_duration_seconds: potential_milestones[tup_tuf_key] = current_task_data
 
-                # Salvataggio dati TUP/TUF e All Tasks
+                # --- Correzione Definitiva KeyError ---
                 final_milestones_data = []
                 for key in potential_milestones:
                      data = potential_milestones[key]
-                     final_milestones_data.append({...}) # Omissis .get() logic
+                     # Aggiungi DataInizioObj SEMPRE, anche se None
+                     final_milestones_data.append({
+                         "Nome Completo": data.get("Nome Completo", ""),
+                         "Data Inizio": data.get("Data Inizio", "N/D"),
+                         "Data Fine": data.get("Data Fine", "N/D"),
+                         "Durata": data.get("Durata", "N/D"),
+                         "DataInizioObj": data.get("DataInizioObj") # Fondamentale che sia qui
+                     })
+
                 if final_milestones_data:
                     df_milestones = pd.DataFrame(final_milestones_data)
                     min_date_for_sort = date.min
+                    # Converti e gestisci None PRIMA di ordinare
                     df_milestones['DataInizioObj'] = pd.to_datetime(df_milestones['DataInizioObj'], errors='coerce').dt.date
                     df_milestones['DataInizioObj'] = df_milestones['DataInizioObj'].fillna(min_date_for_sort)
                     df_milestones = df_milestones.sort_values(by="DataInizioObj").reset_index(drop=True)
+                    # Salva il DF senza la colonna di ordinamento
                     st.session_state['df_milestones_display'] = df_milestones.drop(columns=['DataInizioObj'])
-                else: st.session_state['df_milestones_display'] = None
+                else:
+                    st.session_state['df_milestones_display'] = None
+                # --- Fine Correzione ---
+
                 st.session_state['all_tasks_data'] = pd.DataFrame(all_tasks_data_list)
                 uploaded_file.seek(0); debug_content_bytes = uploaded_file.read(2000);
                 try: st.session_state['debug_raw_text'] = '\n'.join(debug_content_bytes.decode('utf-8', errors='ignore').splitlines()[:50])
                 except Exception as decode_err: st.session_state['debug_raw_text'] = f"Errore decodifica debug: {decode_err}"
                 st.session_state.file_processed_success = True
-                st.rerun()
+                st.rerun() # Forza rerun per mostrare i dati correttamente
 
             except etree.XMLSyntaxError as e: st.error(f"Errore Sintassi XML: {e}"); st.error("File malformato?"); st.session_state.file_processed_success = False;
             except KeyError as ke: st.error(f"Errore interno: Chiave mancante {ke}"); st.error("Problema estrazione dati."); st.session_state.file_processed_success = False;
             except Exception as e: st.error(f"Errore Analisi durante elaborazione iniziale: {e}"); st.error("Verifica file XML."); st.session_state.file_processed_success = False;
 
     # --- VISUALIZZAZIONE DATI E SELEZIONE PERIODO ---
-    if st.session_state.file_processed_success:
+    if st.session_state.get('file_processed_success', False): # Usa .get() per sicurezza
         # --- Sezione 2: Analisi Preliminare ---
         st.markdown("---")
         st.markdown("#### 2. Analisi Preliminare")
