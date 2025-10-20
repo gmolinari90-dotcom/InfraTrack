@@ -1,4 +1,4 @@
-# --- v3.4 ---
+# --- v3.5 ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -8,12 +8,13 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v3.4", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v3.5", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
+# ... (CSS Identico a v3.4) ...
 st.markdown("""
 <style>
-    /* ... (CSS omesso per brevità - Identico a v3.3) ... */
+    /* ... (CSS omesso per brevità) ... */
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button { font-size: 0.85rem !important; }
     .stApp h2 { font-size: 1.5rem !important; }
     .stApp .stMarkdown h4 { font-size: 1.1rem !important; margin-bottom: 0.5rem; margin-top: 1rem; }
@@ -28,24 +29,26 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v3.4") # Version updated
+st.markdown("## 🚆 InfraTrack v3.5") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
-# ... (Identico a v3.3) ...
+# ... (Identico a v3.4) ...
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 if st.button("🔄", key="reset_button", help="Resetta l'analisi", disabled=not st.session_state.file_processed_success):
     st.session_state.widget_key_counter += 1
     st.session_state.file_processed_success = False
-    keys_to_reset = ['uploaded_file_state', 'project_name', 'formatted_cost','df_milestones_display', 'debug_raw_text', 'project_start_date','project_finish_date', 'all_tasks_data']
+    keys_to_reset = ['uploaded_file_state', 'project_name', 'formatted_cost','df_milestones_display', 'debug_raw_text', 'project_start_date','project_finish_date', 'all_tasks_data', 'slider_value'] # Aggiunto slider_value
     for key in keys_to_reset:
         if key in st.session_state: del st.session_state[key]
     st.rerun()
 
+
 # --- CARICAMENTO FILE ---
-# ... (Identico a v3.3) ...
+# ... (Identico a v3.4) ...
 st.markdown("---")
 st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
@@ -60,7 +63,7 @@ if uploaded_file is not None:
     if not st.session_state.file_processed_success:
         with st.spinner('Caricamento e analisi completa del file in corso...'):
             try:
-                # ... (Logica parsing e estrazione dati identica a v3.3) ...
+                # ... (Logica parsing e estrazione dati identica a v3.4) ...
                 uploaded_file.seek(0); file_content_bytes = uploaded_file.read()
                 parser = etree.XMLParser(recover=True); tree = etree.fromstring(file_content_bytes, parser=parser)
                 ns = {'msp': 'http://schemas.microsoft.com/project'}
@@ -82,18 +85,18 @@ if uploaded_file is not None:
                 tup_tuf_pattern = re.compile(r'(?i)(TUP|TUF)\s*\d*'); all_tasks_data_list = []
                 def format_duration_from_xml(duration_str, work_hours_per_day=8.0):
                     # ... (funzione durata omessa per brevità) ...
-                    if not duration_str or work_hours_per_day <= 0: return "0g"
-                    try:
-                        if duration_str.startswith('T'): duration_str = 'P' + duration_str
-                        elif not duration_str.startswith('P'): return "N/D"
-                        duration = isodate.parse_duration(duration_str)
-                        total_hours = duration.total_seconds() / 3600
-                        if total_hours == 0: return "0g"
-                        work_days = total_hours / work_hours_per_day
-                        return f"{round(work_days)}g"
-                    except Exception: return "N/D"
+                     if not duration_str or work_hours_per_day <= 0: return "0g"
+                     try:
+                         if duration_str.startswith('T'): duration_str = 'P' + duration_str
+                         elif not duration_str.startswith('P'): return "N/D"
+                         duration = isodate.parse_duration(duration_str)
+                         total_hours = duration.total_seconds() / 3600
+                         if total_hours == 0: return "0g"
+                         work_days = total_hours / work_hours_per_day
+                         return f"{round(work_days)}g"
+                     except Exception: return "N/D"
                 for task in all_tasks:
-                    # ... (Logica estrazione dati attività e TUP/TUF identica a v3.3) ...
+                     # ... (Logica estrazione dati attività e TUP/TUF identica a v3.4) ...
                     uid = task.findtext('msp:UID', namespaces=ns); name = task.findtext('msp:Name', namespaces=ns) or ""
                     start_str = task.findtext('msp:Start', namespaces=ns); finish_str = task.findtext('msp:Finish', namespaces=ns)
                     duration_str = task.findtext('msp:Duration', namespaces=ns); cost_str = task.findtext('msp:Cost', namespaces=ns) or "0"
@@ -136,24 +139,32 @@ if uploaded_file is not None:
 
     # --- VISUALIZZAZIONE DATI E ANALISI AVANZATA ---
     if st.session_state.file_processed_success:
-        # --- Sezione 2: Analisi Preliminare (invariata) ---
         st.markdown("---")
         st.markdown("#### 2. Analisi Preliminare")
         st.markdown("##### 📄 Informazioni Generali dell'Appalto")
-        # ... (Visualizzazione dati generali e TUP/TUF + download identica a v3.3) ...
-        project_name = st.session_state.get('project_name', "N/D"); formatted_cost = st.session_state.get('formatted_cost', "N/D")
-        col1_disp, col2_disp = st.columns(2); with col1_disp: st.markdown(f"**Nome:** {project_name}"); with col2_disp: st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
+        project_name = st.session_state.get('project_name', "N/D")
+        formatted_cost = st.session_state.get('formatted_cost', "N/D")
+
+        # --- CORREZIONE SYNTAX ERROR ---
+        col1_disp, col2_disp = st.columns(2)
+        with col1_disp:
+            st.markdown(f"**Nome:** {project_name}")
+        with col2_disp:
+            st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
+        # --- FINE CORREZIONE ---
+
         st.markdown("##### 🗓️ Termini Utili Contrattuali (TUP/TUF)")
         df_display = st.session_state.get('df_milestones_display')
         if df_display is not None and not df_display.empty:
             st.dataframe(df_display, use_container_width=True, hide_index=True)
             output = BytesIO(); #... (download excel)
             with pd.ExcelWriter(output, engine='openpyxl') as writer: df_display.to_excel(writer, index=False, sheet_name='TerminiUtili')
-            excel_data = output.getvalue(); st.download_button(label="Scarica (Excel)", data=excel_data, file_name="termini_utili_TUP_TUF.xlsx", mime="...")
+            excel_data = output.getvalue(); st.download_button(label="Scarica (Excel)", data=excel_data, file_name="...", mime="...")
         else: st.warning("Nessun Termine Utile (TUP o TUF) trovato nel file.")
 
 
         # --- Sezione 3: Analisi Avanzata ---
+        # ... (Identica a v3.4, inclusi slider e debug) ...
         st.markdown("---")
         st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today())
@@ -162,87 +173,43 @@ if uploaded_file is not None:
         if not default_finish: default_finish = default_start + timedelta(days=365)
         if default_start > default_finish: default_finish = default_start + timedelta(days=1)
         st.markdown("##### 📅 Seleziona Periodo di Riferimento")
-        st.caption(f"Default: {default_start.strftime('%d/%m/%Y')} - {default_finish.strftime('%d/%m/%Y')}. Modifica per analisi specifica.") # Caption aggiornata
+        st.caption(f"Default: {default_start.strftime('%d/%m/%Y')} - {default_finish.strftime('%d/%m/%Y')}. Modifica per analisi specifica.")
         col_date1, col_date2 = st.columns(2)
-        with col_date1: selected_start_date = st.date_input("Data Inizio Analisi", value=default_start, min_value=default_start, max_value=default_finish + timedelta(days=5*365), format="DD/MM/YYYY", key="start_date_selector") # Aggiunta key
+        with col_date1: selected_start_date = st.date_input("Data Inizio Analisi", value=default_start, min_value=default_start, max_value=default_finish + timedelta(days=5*365), format="DD/MM/YYYY", key="start_date_selector")
         with col_date2:
             min_end_date = selected_start_date; actual_default_finish = max(default_finish, min_end_date)
             reasonable_max_date = actual_default_finish + timedelta(days=10*365)
-            selected_finish_date = st.date_input("Data Fine Analisi", value=actual_default_finish, min_value=min_end_date, max_value=reasonable_max_date, format="DD/MM/YYYY", key="finish_date_selector") # Aggiunta key
-
-        # --- Analisi Dettagliate ---
+            selected_finish_date = st.date_input("Data Fine Analisi", value=actual_default_finish, min_value=min_end_date, max_value=reasonable_max_date, format="DD/MM/YYYY", key="finish_date_selector")
         st.markdown("---")
         st.markdown("##### 📊 Analisi Dettagliate")
         all_tasks_df = st.session_state.get('all_tasks_data')
-
         if all_tasks_df is not None and not all_tasks_df.empty:
             try:
-                # Recupera l'originale dalla session state AD OGNI ESECUZIONE per evitare modifiche
                 tasks_to_filter = st.session_state['all_tasks_data'].copy()
-
-                # Conversione date sicura (necessaria ad ogni esecuzione)
                 tasks_to_filter['Start'] = pd.to_datetime(tasks_to_filter['Start'], errors='coerce').dt.date
                 tasks_to_filter['Finish'] = pd.to_datetime(tasks_to_filter['Finish'], errors='coerce').dt.date
                 tasks_to_filter_cleaned = tasks_to_filter.dropna(subset=['Start', 'Finish'])
-
-                # Filtra per date SEMPRE
-                filtered_tasks_df = tasks_to_filter_cleaned[
-                    (tasks_to_filter_cleaned['Start'] <= selected_finish_date) &
-                    (tasks_to_filter_cleaned['Finish'] >= selected_start_date)
-                ].copy()
-
-                # --- NUOVO DEBUG: Distribuzione Slack nel periodo filtrato ---
-                if not filtered_tasks_df.empty:
-                     st.write("Distribuzione Slack (giorni) nel periodo selezionato:", sorted(filtered_tasks_df['TotalSlackDays'].unique()))
-                else:
-                     st.write("Nessuna attività trovata nel periodo selezionato per analizzare lo slack.")
-                # --- FINE NUOVO DEBUG ---
-
-
+                filtered_tasks_df = tasks_to_filter_cleaned[ (tasks_to_filter_cleaned['Start'] <= selected_finish_date) & (tasks_to_filter_cleaned['Finish'] >= selected_start_date) ].copy()
+                if not filtered_tasks_df.empty: st.write("Distribuzione Slack (giorni) nel periodo:", sorted(filtered_tasks_df['TotalSlackDays'].unique()))
+                else: st.write("Nessuna attività nel periodo per analizzare lo slack.")
                 st.markdown("###### Analisi Percorso Critico / Sub-critico")
                 if not filtered_tasks_df.empty:
-                    max_slack = int(filtered_tasks_df['TotalSlackDays'].max()); max_slack = max(0, max_slack)
-                    slider_max = min(max_slack, 60)
-
-                    # Leggi il valore dello slider AD OGNI ESECUZIONE
-                    selected_slack = st.slider(
-                        "Margine di Flessibilità Totale (giorni)",
-                        min_value=0, max_value=slider_max, value=st.session_state.get('slider_value', 0), step=1, # Usa session state per mantenere valore
-                        key="slack_slider"
-                    )
-                    # Salva il valore corrente dello slider in session state
+                    max_slack = int(filtered_tasks_df['TotalSlackDays'].max()); max_slack = max(0, max_slack); slider_max = min(max_slack, 60)
+                    selected_slack = st.slider("Margine Flessibilità Totale (giorni)", min_value=0, max_value=slider_max, value=st.session_state.get('slider_value', 0), step=1, key="slack_slider")
                     st.session_state['slider_value'] = selected_slack
-
-
-                    # Filtra per slack SEMPRE, usando il valore corrente dello slider
-                    critical_subcritical_tasks = filtered_tasks_df[
-                        filtered_tasks_df['TotalSlackDays'] <= selected_slack
-                    ]
-
-                    # Rimuoviamo il vecchio debug st.write
-
+                    critical_subcritical_tasks = filtered_tasks_df[ filtered_tasks_df['TotalSlackDays'] <= selected_slack ]
                     if not critical_subcritical_tasks.empty:
                         st.write(f"Attività critiche/sub-critiche (Slack <= {selected_slack} giorni):")
-                        display_critical_df = critical_subcritical_tasks[[...]].rename(columns={...}) # Omissis colonne
+                        display_critical_df = critical_subcritical_tasks[["WBS", "Name", "Duration", "Start", "Finish", "TotalSlackDays"]].rename(columns={"Name": "Nome Attività", "Duration": "Durata", "Start": "Inizio", "Finish": "Fine", "TotalSlackDays": "Slack (g)"})
                         display_critical_df['Inizio'] = pd.to_datetime(display_critical_df['Inizio']).dt.strftime('%d/%m/%Y')
                         display_critical_df['Fine'] = pd.to_datetime(display_critical_df['Fine']).dt.strftime('%d/%m/%Y')
                         st.dataframe(display_critical_df, use_container_width=True, hide_index=True)
-
-                        output_crit = BytesIO() # ... (omissis download excel)
+                        output_crit = BytesIO() # ... (download excel)
                         with pd.ExcelWriter(output_crit, engine='openpyxl') as writer: display_critical_df.to_excel(writer, index=False, sheet_name='PercorsoCritico')
                         excel_data_crit = output_crit.getvalue(); st.download_button(label="Scarica Analisi Criticità (Excel)", data=excel_data_crit, file_name=f"...", mime="...", key="download_criticita")
-                    else:
-                        st.warning(f"Nessuna attività trovata con Slack <= {selected_slack} giorni nel periodo selezionato.")
-                else:
-                    st.warning("Nessuna attività nel periodo selezionato per l'analisi di criticità.")
-
-
-            except Exception as analysis_error:
-                st.error(f"Errore durante l'analisi avanzata: {analysis_error}")
-        else:
-             st.error("Errore: Dati delle attività non trovati in sessione.")
-
-        # Debug (invariato)
-        # ... (omissis)
-        debug_text = st.session_state.get('debug_raw_text'); #...
-        if debug_text: st.markdown("---"); #...
+                    else: st.warning(f"Nessuna attività trovata con Slack <= {selected_slack} giorni nel periodo.")
+                else: st.warning("Nessuna attività nel periodo per analisi criticità.")
+            except Exception as analysis_error: st.error(f"Errore analisi avanzata: {analysis_error}")
+        else: st.error("Errore: Dati attività non trovati.")
+        debug_text = st.session_state.get('debug_raw_text'); # ... (debug section)
+        if debug_text: st.markdown("---"); # ...
