@@ -7,7 +7,7 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v1.3", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v1.4", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -16,14 +16,14 @@ st.markdown("""
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button {
         font-size: 0.85rem !important;
     }
-     .stApp h2 { /* Target per il titolo principale H2 */
+     .stApp h2 {
         font-size: 1.5rem !important;
      }
-     .stApp .stMarkdown h4 { /* Target specifici per header informazioni */
+     .stApp .stMarkdown h4 {
          font-size: 0.95rem !important;
          margin-bottom: 0.5rem;
      }
-     .stApp .stMarkdown h5 { /* Target specifici per header milestone */
+     .stApp .stMarkdown h5 {
          font-size: 0.90rem !important;
           margin-bottom: 0.5rem;
      }
@@ -40,11 +40,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v1.3") # Version updated
+st.markdown("## 🚆 InfraTrack v1.4") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- BOTTONE RESET ---
-if st.button("🔄 Reset e Ricarica Nuovo File"):
+if st.button("🔄 Reset Script"): # Etichetta leggermente modificata per chiarezza
+    # st.rerun() riesegue lo script Python dall'inizio.
+    # Per un reset completo che svuoti anche il widget file,
+    # è necessario un refresh manuale del browser (F5 / Cmd+R).
     st.rerun()
 
 # --- CARICAMENTO FILE ---
@@ -56,6 +59,7 @@ uploaded_file = st.file_uploader("Seleziona il file .XML esportato da MS Project
 if uploaded_file is not None:
     with st.spinner('Caricamento e analisi del file in corso...'):
         try:
+            # ... (Logica di parsing XML e estrazione dati generali omessa per brevità, è la stessa) ...
             file_content_bytes = uploaded_file.getvalue()
             parser = etree.XMLParser(recover=True)
             tree = etree.fromstring(file_content_bytes, parser=parser)
@@ -67,21 +71,17 @@ if uploaded_file is not None:
 
             project_name = "Attività con UID 1 non trovata"
             formatted_cost = "€ 0,00"
-
             task_uid_1 = tree.find(".//msp:Task[msp:UID='1']", namespaces=ns)
-
             if task_uid_1 is not None:
                 project_name = task_uid_1.findtext('msp:Name', namespaces=ns) or "Nome non trovato"
                 total_cost_str = task_uid_1.findtext('msp:Cost', namespaces=ns) or "0"
                 total_cost_cents = float(total_cost_str)
                 total_cost_euros = total_cost_cents / 100.0
                 formatted_cost = f"€ {total_cost_euros:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
             col1, col2 = st.columns(2)
-            with col1:
-                st.markdown(f"**Nome Appalto:** {project_name}")
-            with col2:
-                st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
+            with col1: st.markdown(f"**Nome Appalto:** {project_name}")
+            with col2: st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
+
 
             st.markdown("##### 🗓️ Milestone Principali (TUP/TUF)")
 
@@ -90,7 +90,7 @@ if uploaded_file is not None:
             tup_tuf_pattern = re.compile(r'(?i)(TUP|TUF)\s*\d*')
 
             def format_duration_from_xml(duration_str, work_hours_per_day=8.0):
-                # ... (funzione durata omessa per brevità, è la stessa di prima) ...
+                # ... (funzione durata omessa per brevità) ...
                 if not duration_str or work_hours_per_day <= 0: return "0g"
                 try:
                     if duration_str.startswith('T'): duration_str = 'P' + duration_str
@@ -104,6 +104,7 @@ if uploaded_file is not None:
 
 
             for task in all_tasks:
+                # ... (Logica estrazione TUP/TUF omessa per brevità, è la stessa) ...
                 task_name = task.findtext('msp:Name', namespaces=ns) or ""
                 match = tup_tuf_pattern.search(task_name)
                 if match:
@@ -121,46 +122,34 @@ if uploaded_file is not None:
                     start_date_formatted = start_date_obj.strftime("%d/%m/%Y") if start_date_obj else "N/D"
                     finish_date_formatted = finish_date_obj.strftime("%d/%m/%Y") if finish_date_obj else "N/D"
                     current_task_data = {
-                        "Nome Completo": task_name,
-                        "Data Inizio": start_date_formatted,
-                        "Data Fine": finish_date_formatted,
-                        "Durata": format_duration_from_xml(duration_str),
-                        "DurataSecondi": duration_seconds,
-                        "DataInizioObj": start_date_obj
+                        "Nome Completo": task_name, "Data Inizio": start_date_formatted, "Data Fine": finish_date_formatted,
+                        "Durata": format_duration_from_xml(duration_str), "DurataSecondi": duration_seconds, "DataInizioObj": start_date_obj
                     }
                     if tup_tuf_key not in potential_milestones or duration_seconds > potential_milestones[tup_tuf_key]["DurataSecondi"]:
-                         if duration_seconds > 0 or (tup_tuf_key not in potential_milestones):
-                              potential_milestones[tup_tuf_key] = current_task_data
-                         elif duration_seconds == 0 and tup_tuf_key in potential_milestones and potential_milestones[tup_tuf_key]["DurataSecondi"] == 0:
-                              pass
+                         if duration_seconds > 0 or (tup_tuf_key not in potential_milestones): potential_milestones[tup_tuf_key] = current_task_data
+                         elif duration_seconds == 0 and tup_tuf_key in potential_milestones and potential_milestones[tup_tuf_key]["DurataSecondi"] == 0: pass
+
 
             final_milestones_data = []
             for key in potential_milestones:
-                data = potential_milestones[key]
-                final_milestones_data.append({
-                    "Nome Completo": data["Nome Completo"],
-                    "Data Inizio": data["Data Inizio"],
-                    "Data Fine": data["Data Fine"],
-                    "Durata": data["Durata"],
-                    "DataInizioObj": data["DataInizioObj"]
-                })
+                 data = potential_milestones[key]
+                 final_milestones_data.append({"Nome Completo": data["Nome Completo"], "Data Inizio": data["Data Inizio"], "Data Fine": data["Data Fine"],
+                                               "Durata": data["Durata"], "DataInizioObj": data["DataInizioObj"]})
 
             if final_milestones_data:
                 df_milestones = pd.DataFrame(final_milestones_data)
                 df_milestones = df_milestones.sort_values(by="DataInizioObj").reset_index(drop=True)
                 df_display = df_milestones[["Nome Completo", "Durata", "Data Inizio", "Data Fine"]]
+                st.dataframe(df_display, use_container_width=True, hide_index=True)
 
-                # --- MODIFICA: NASCONDI INDICE DATAFRAME ---
-                st.dataframe(df_display, use_container_width=True, hide_index=True) # Aggiunto hide_index=True
-
-                # --- Bottone Download Excel (invariato) ---
                 output = BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    # Usiamo df_display che ha le colonne nell'ordine giusto e senza DataInizioObj
                     df_display.to_excel(writer, index=False, sheet_name='Milestones')
                 excel_data = output.getvalue()
+
+                # --- MODIFICA ETICHETTA BOTTONE DOWNLOAD ---
                 st.download_button(
-                    label="📄 Scarica Tabella Milestones (Excel)",
+                    label="Scarica (Excel)", # Etichetta modificata
                     data=excel_data,
                     file_name="milestones_TUP_TUF.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -175,15 +164,12 @@ if uploaded_file is not None:
                 raw_text = file_content_bytes.decode('utf-8', errors='ignore')
                 st.code('\n'.join(raw_text.splitlines()[:50]), language='xml')
 
-        # ... (Gestione eccezioni omessa per brevità, è la stessa di prima) ...
+        # ... (Gestione eccezioni omessa per brevità) ...
         except etree.XMLSyntaxError as e:
              st.error(f"Errore di sintassi XML: {e}")
              st.error("Il file XML sembra essere malformato o incompleto. Prova a riesportarlo da MS Project.")
-             try:
-                 raw_text = file_content_bytes.decode('utf-8', errors='ignore')
-                 st.code('\n'.join(raw_text.splitlines()[:20]), language='xml')
-             except Exception:
-                 st.error("Impossibile leggere l'inizio del file.")
+             try: raw_text = file_content_bytes.decode('utf-8', errors='ignore'); st.code('\n'.join(raw_text.splitlines()[:20]), language='xml')
+             except Exception: st.error("Impossibile leggere l'inizio del file.")
         except Exception as e:
             st.error(f"Errore imprevisto durante l'analisi del file XML: {e}")
             st.error("Verifica che il file sia un XML valido esportato da MS Project.")
