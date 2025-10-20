@@ -7,7 +7,7 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v2.8", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v2.9", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -23,16 +23,17 @@ st.markdown("""
     /* ---- MODIFICHE BOTTONE RESET ---- */
     /* Selettore specifico */
     button[data-testid="stButton"][kind="primary"][key="reset_button"] {
-        display: inline-flex !important;   /* Usa flexbox per il contenuto interno */
-        align-items: center !important;     /* Centra verticalmente l'icona */
-        justify-content: center !important; /* Centra orizzontalmente l'icona */
-        padding: 0.2rem 0.4rem !important;  /* Padding simmetrico per dare spazio */
+        display: flex !important;           /* Assicura flexbox */
+        align-items: center !important;     /* Centra verticalmente */
+        justify-content: center !important; /* Centra orizzontalmente */
+        padding: 0.2rem 0.4rem !important;  /* Padding simmetrico */
         line-height: 1 !important;
         font-size: 1.0rem !important;       /* Dimensione icona */
         min-width: auto !important;
-        width: auto !important;             /* Lascia che si adatti al contenuto + padding */
+        width: auto !important;
         border-radius: 0.25rem !important;
-        /* Rimuoviamo text-align, justify/align-items sono più potenti con flex */
+        vertical-align: middle !important; /* Aggiunto per sicurezza */
+        text-align: center !important;     /* Mantenuto per sicurezza */
     }
      button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled {
         cursor: not-allowed; opacity: 0.5;
@@ -52,11 +53,11 @@ st.markdown("""
 col_title, col_reset = st.columns([0.95, 0.05], vertical_alignment="center")
 
 with col_title:
-    st.markdown("## 🚆 InfraTrack v2.8") # Version updated
+    st.markdown("## 🚆 InfraTrack v2.9") # Version updated
     st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
-# ... (Logica reset omessa per brevità, è la stessa v2.7) ...
+# ... (Logica reset omessa per brevità, è la stessa v2.8) ...
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 with col_reset:
@@ -68,7 +69,7 @@ with col_reset:
 
 
 # --- CARICAMENTO FILE ---
-# ... (Il resto del codice rimane invariato rispetto alla v2.7) ...
+# ... (Il resto del codice rimane invariato rispetto alla v2.8) ...
 st.markdown("---")
 st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
