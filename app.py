@@ -7,7 +7,7 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v1.9", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v2.0", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -32,15 +32,21 @@ st.markdown("""
     /* ---- MODIFICHE BOTTONE RESET ---- */
     /* Applichiamo stili specifici al bottone di reset tramite la sua key */
     button[data-testid="stButton"][kind="primary"][key="reset_button"] {
-        padding: 0.2rem 0.5rem !important;
-        line-height: 1.2 !important; /* Aumenta leggermente per l'icona più grande */
-        font-size: 1.1rem !important; /* Ingrandisci l'icona (e il testo, se ci fosse) */
+        padding: 0.1rem 0.3rem !important; /* Riduci padding per adattare all'icona */
+        line-height: 1 !important;
+        font-size: 1.1rem !important; /* Ingrandisci l'icona */
+        min-width: auto !important;
     }
      /* Stile per bottone reset disabilitato */
      button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled {
         cursor: not-allowed;
         opacity: 0.5;
      }
+    /* Allinea verticalmente titolo e bottone reset nelle colonne */
+    div[data-testid="stHorizontalBlock"] > div[style*="flex-direction: row"] {
+        display: flex;
+        align-items: center; /* Allinea verticalmente */
+    }
      /* ---- FINE MODIFICHE BOTTONE ---- */
 
     .stApp {
@@ -52,9 +58,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v1.9") # Version updated
-st.caption("La tua centrale di controllo per progetti infrastrutturali")
+# --- TITOLO E HEADER CON BOTTONE RESET ALLINEATO ---
+col_title, col_reset = st.columns([0.95, 0.05]) # Usiamo colonne per affiancare
+
+with col_title:
+    st.markdown("## 🚆 InfraTrack v2.0") # Version updated
+    st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
 if 'widget_key_counter' not in st.session_state:
@@ -62,16 +71,17 @@ if 'widget_key_counter' not in st.session_state:
 if 'file_processed_success' not in st.session_state:
     st.session_state.file_processed_success = False
 
-# Bottone Reset (riportato sotto il titolo, con icona più grande)
-if st.button("🔄 Reset Completo", key="reset_button", help="Resetta l'analisi e permette di caricare un nuovo file", disabled=not st.session_state.file_processed_success):
-    st.session_state.widget_key_counter += 1
-    st.session_state.file_processed_success = False
-    if 'uploaded_file_state' in st.session_state:
-        del st.session_state['uploaded_file_state']
-    st.rerun()
-
+# Bottone Reset (solo icona, disabilitato, nella seconda colonna)
+with col_reset:
+    if st.button("🔄", key="reset_button", help="Reset Completo", disabled=not st.session_state.file_processed_success):
+        st.session_state.widget_key_counter += 1
+        st.session_state.file_processed_success = False
+        if 'uploaded_file_state' in st.session_state:
+            del st.session_state['uploaded_file_state']
+        st.rerun()
 
 # --- CARICAMENTO FILE ---
+# ... (Il resto del codice rimane invariato rispetto alla v1.9/v1.8) ...
 st.markdown("---")
 st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
@@ -82,30 +92,22 @@ uploaded_file = st.file_uploader(
     key=uploader_key
 )
 
-# --- Messaggio di Successo Caricamento ---
 if st.session_state.file_processed_success and 'uploaded_file_state' in st.session_state :
      st.success('File XML analizzato con successo!')
 
-
-# --- Mantenimento stato file caricato ---
 if uploaded_file is not None:
     st.session_state['uploaded_file_state'] = uploaded_file
-# Togliamo l'else: se non c'è file caricato E non c'è stato, semplicemente non procede
-# elif 'uploaded_file_state' in st.session_state:
-#      uploaded_file = st.session_state['uploaded_file_state']
+elif 'uploaded_file_state' in st.session_state:
+     uploaded_file = st.session_state['uploaded_file_state']
 
-
-# --- INIZIO ANALISI ---
 if uploaded_file is not None:
     if not st.session_state.file_processed_success:
         with st.spinner('Caricamento e analisi del file in corso...'):
             try:
-                # ... (Logica parsing XML e estrazione dati omessa per brevità, è la stessa v1.8) ...
                 uploaded_file.seek(0); file_content_bytes = uploaded_file.read()
                 parser = etree.XMLParser(recover=True); tree = etree.fromstring(file_content_bytes, parser=parser)
                 ns = {'msp': 'http://schemas.microsoft.com/project'}
 
-                # Dati Generali
                 project_name = "N/D"; formatted_cost = "€ 0,00"
                 task_uid_1 = tree.find(".//msp:Task[msp:UID='1']", namespaces=ns)
                 if task_uid_1 is not None:
@@ -116,7 +118,6 @@ if uploaded_file is not None:
                 st.session_state['project_name'] = project_name
                 st.session_state['formatted_cost'] = formatted_cost
 
-                # TUP/TUF
                 potential_milestones = {}
                 all_tasks = tree.findall('.//msp:Task', namespaces=ns)
                 tup_tuf_pattern = re.compile(r'(?i)(TUP|TUF)\s*\d*')
@@ -156,7 +157,6 @@ if uploaded_file is not None:
                     st.session_state['df_milestones_display'] = df_milestones[["Nome Completo", "Durata", "Data Inizio", "Data Fine"]]
                 else: st.session_state['df_milestones_display'] = None
 
-                # Debug
                 uploaded_file.seek(0); debug_content_bytes = uploaded_file.read(2000)
                 try: st.session_state['debug_raw_text'] = '\n'.join(debug_content_bytes.decode('utf-8', errors='ignore').splitlines()[:50])
                 except Exception as decode_err: st.session_state['debug_raw_text'] = f"Errore decodifica debug: {decode_err}"
@@ -165,15 +165,12 @@ if uploaded_file is not None:
                 st.rerun()
 
             except etree.XMLSyntaxError as e:
-                 # ... (Gestione eccezioni) ...
                  st.error(f"Errore Sintassi XML: {e}"); st.error("File malformato?"); st.session_state.file_processed_success = False
                  try: uploaded_file.seek(0); st.code('\n'.join(uploaded_file.read(1000).decode('utf-8', errors='ignore').splitlines()[:20]), language='xml')
                  except Exception: pass
             except Exception as e:
-                # ... (Gestione eccezioni) ...
                 st.error(f"Errore Analisi: {e}"); st.error("Verifica file XML."); st.session_state.file_processed_success = False
 
-    # --- VISUALIZZAZIONE DATI ---
     if st.session_state.file_processed_success:
         st.markdown("---")
         st.markdown("#### 2. Analisi Preliminare")
