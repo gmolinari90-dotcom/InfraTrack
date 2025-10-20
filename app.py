@@ -7,54 +7,71 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v2.3", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v2.4", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
 <style>
-    /* ... (CSS omesso per brevità) ... */
+    /* ... (Stili generali omessi per brevità) ... */
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button {
         font-size: 0.85rem !important;
     }
-     .stApp h2 {
+     .stApp h2 { /* Titolo Principale */
         font-size: 1.5rem !important;
      }
-     .stApp .stMarkdown h4 {
-         font-size: 0.95rem !important; margin-bottom: 0.5rem; margin-top: 1rem;
+     /* ---- MODIFICA: Aumenta dimensione Titoli Sezione ---- */
+     .stApp .stMarkdown h4 { /* Titoli Sezione (1. Carica..., 2. Analisi...) */
+         font-size: 1.1rem !important; /* Aumentato */
+         margin-bottom: 0.5rem;
+         margin-top: 1rem;
      }
-     .stApp .stMarkdown h5 {
-         font-size: 0.90rem !important; margin-bottom: 0.5rem; margin-top: 0.8rem;
+     /* ---- FINE MODIFICA ---- */
+     .stApp .stMarkdown h5 { /* Sottotitoli */
+         font-size: 0.90rem !important;
+         margin-bottom: 0.5rem;
+         margin-top: 0.8rem;
      }
-    /* Stili Bottone Reset */
+    /* ---- MODIFICHE BOTTONE RESET ---- */
+    /* Applichiamo stili specifici al bottone di reset */
     button[data-testid="stButton"][kind="primary"][key="reset_button"] {
-        padding: 0.05rem 0.15rem !important; line-height: 1 !important; font-size: 1.0rem !important;
-        min-width: fit-content !important; width: fit-content !important; display: inline-flex !important;
-        align-items: center !important; justify-content: center !important; border-radius: 0.25rem !important;
+        padding: 0.05rem 0.15rem !important;
+        line-height: 1 !important;
+        font-size: 1.0rem !important;
+        min-width: fit-content !important;
+        width: fit-content !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border-radius: 0.25rem !important;
+        margin-left: 0.5rem !important; /* Aggiungi un piccolo spazio a sinistra */
     }
      button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled {
         cursor: not-allowed; opacity: 0.5;
      }
-    /* Allinea verticalmente titolo e bottone */
+    /* Allinea verticalmente titolo e bottone reset nelle colonne */
     div[data-testid="stHorizontalBlock"] > div[style*="flex-direction: row"] {
         display: flex; align-items: center;
     }
+     /* ---- FINE MODIFICHE BOTTONE ---- */
+
     .stApp { padding-top: 2rem; }
     .stDataFrame td { text-align: center !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # --- TITOLO E HEADER CON BOTTONE RESET ALLINEATO ---
-# --- MODIFICA: Ridotta larghezza colonna bottone ---
-col_title, col_reset = st.columns([0.97, 0.03], vertical_alignment="center") # Ratio modificato (era 0.95, 0.05)
+# Usiamo le colonne ma diamo pochissimo spazio al bottone per avvicinarlo
+col_title, col_reset, _ = st.columns([0.8, 0.05, 0.15], vertical_alignment="center") # Aggiunta terza colonna fittizia per spingere
 
 with col_title:
-    st.markdown("## 🚆 InfraTrack v2.3") # Version updated
+    st.markdown("## 🚆 InfraTrack v2.4") # Version updated
     st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 
+# Mettiamo il bottone nella seconda colonna, ora molto vicina alla prima
 with col_reset:
     if st.button("🔄", key="reset_button", help="Reset Completo", disabled=not st.session_state.file_processed_success):
         st.session_state.widget_key_counter += 1
@@ -63,9 +80,9 @@ with col_reset:
         st.rerun()
 
 # --- CARICAMENTO FILE ---
-# ... (Il resto del codice rimane invariato rispetto alla v2.2) ...
+# ... (Il resto del codice rimane invariato rispetto alla v2.3) ...
 st.markdown("---")
-st.markdown("#### 1. Carica la Baseline di Riferimento")
+st.markdown("#### 1. Carica la Baseline di Riferimento") # Ora apparirà più grande
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
 uploaded_file = st.file_uploader(
     "Seleziona il file .XML esportato da MS Project", type=["xml"],
@@ -100,6 +117,7 @@ if uploaded_file is not None:
                 all_tasks = tree.findall('.//msp:Task', namespaces=ns)
                 tup_tuf_pattern = re.compile(r'(?i)(TUP|TUF)\s*\d*')
                 def format_duration_from_xml(duration_str, work_hours_per_day=8.0):
+                    # ... (omessa) ...
                     if not duration_str or work_hours_per_day <= 0: return "0g"
                     try:
                         if duration_str.startswith('T'): duration_str = 'P' + duration_str
@@ -111,6 +129,7 @@ if uploaded_file is not None:
                         return f"{round(work_days)}g"
                     except Exception: return "N/D"
                 for task in all_tasks:
+                    # ... (omessa) ...
                     task_name = task.findtext('msp:Name', namespaces=ns) or ""
                     match = tup_tuf_pattern.search(task_name)
                     if match:
@@ -143,15 +162,17 @@ if uploaded_file is not None:
                 st.rerun()
 
             except etree.XMLSyntaxError as e:
+                 # ... (Gestione eccezioni) ...
                  st.error(f"Errore Sintassi XML: {e}"); st.error("File malformato?"); st.session_state.file_processed_success = False
                  try: uploaded_file.seek(0); st.code('\n'.join(uploaded_file.read(1000).decode('utf-8', errors='ignore').splitlines()[:20]), language='xml')
                  except Exception: pass
             except Exception as e:
+                # ... (Gestione eccezioni) ...
                 st.error(f"Errore Analisi: {e}"); st.error("Verifica file XML."); st.session_state.file_processed_success = False
 
     if st.session_state.file_processed_success:
         st.markdown("---")
-        st.markdown("#### 2. Analisi Preliminare")
+        st.markdown("#### 2. Analisi Preliminare") # Ora apparirà più grande
         st.markdown("##### 📄 Informazioni Generali del Progetto")
         project_name = st.session_state.get('project_name', "N/D")
         formatted_cost = st.session_state.get('formatted_cost', "N/D")
