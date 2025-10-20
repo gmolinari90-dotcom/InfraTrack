@@ -7,7 +7,7 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v2.7", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v2.8", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -21,18 +21,18 @@ st.markdown("""
      .stApp .stMarkdown h5 { font-size: 0.90rem !important; margin-bottom: 0.5rem; margin-top: 0.8rem; }
 
     /* ---- MODIFICHE BOTTONE RESET ---- */
-    /* Selettore specifico per il bottone */
+    /* Selettore specifico */
     button[data-testid="stButton"][kind="primary"][key="reset_button"] {
-        padding: 0.15rem 0.4rem !important; /* Manteniamo padding da v2.6 */
-        line-height: 1 !important;         /* Assicura che l'altezza sia minima */
-        font-size: 1.0rem !important;       /* RIDOTTA dimensione icona a 1.0rem */
+        display: inline-flex !important;   /* Usa flexbox per il contenuto interno */
+        align-items: center !important;     /* Centra verticalmente l'icona */
+        justify-content: center !important; /* Centra orizzontalmente l'icona */
+        padding: 0.2rem 0.4rem !important;  /* Padding simmetrico per dare spazio */
+        line-height: 1 !important;
+        font-size: 1.0rem !important;       /* Dimensione icona */
         min-width: auto !important;
-        width: auto !important;
-        display: inline-flex !important;
-        align-items: center !important;     /* Centra verticalmente */
-        justify-content: center !important; /* Centra orizzontalmente */
-        text-align: center !important;      /* Assicura centratura testo/icona */
+        width: auto !important;             /* Lascia che si adatti al contenuto + padding */
         border-radius: 0.25rem !important;
+        /* Rimuoviamo text-align, justify/align-items sono più potenti con flex */
     }
      button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled {
         cursor: not-allowed; opacity: 0.5;
@@ -52,11 +52,11 @@ st.markdown("""
 col_title, col_reset = st.columns([0.95, 0.05], vertical_alignment="center")
 
 with col_title:
-    st.markdown("## 🚆 InfraTrack v2.7") # Version updated
+    st.markdown("## 🚆 InfraTrack v2.8") # Version updated
     st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
-# ... (Logica reset omessa per brevità, è la stessa v2.6) ...
+# ... (Logica reset omessa per brevità, è la stessa v2.7) ...
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 with col_reset:
@@ -68,7 +68,7 @@ with col_reset:
 
 
 # --- CARICAMENTO FILE ---
-# ... (Il resto del codice rimane invariato rispetto alla v2.6) ...
+# ... (Il resto del codice rimane invariato rispetto alla v2.7) ...
 st.markdown("---")
 st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
