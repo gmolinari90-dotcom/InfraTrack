@@ -7,7 +7,7 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v2.0", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v2.1", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -32,9 +32,9 @@ st.markdown("""
     /* ---- MODIFICHE BOTTONE RESET ---- */
     /* Applichiamo stili specifici al bottone di reset tramite la sua key */
     button[data-testid="stButton"][kind="primary"][key="reset_button"] {
-        padding: 0.1rem 0.3rem !important; /* Riduci padding per adattare all'icona */
+        padding: 0.1rem 0.2rem !important; /* RIDOTTO ULTERIORMENTE padding orizzontale */
         line-height: 1 !important;
-        font-size: 1.1rem !important; /* Ingrandisci l'icona */
+        font-size: 1.0rem !important; /* Leggermente ridotto per adattarsi */
         min-width: auto !important;
     }
      /* Stile per bottone reset disabilitato */
@@ -59,10 +59,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- TITOLO E HEADER CON BOTTONE RESET ALLINEATO ---
-col_title, col_reset = st.columns([0.95, 0.05]) # Usiamo colonne per affiancare
+col_title, col_reset = st.columns([0.95, 0.05]) # Manteniamo le colonne
 
 with col_title:
-    st.markdown("## 🚆 InfraTrack v2.0") # Version updated
+    st.markdown("## 🚆 InfraTrack v2.1") # Version updated
     st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
@@ -81,7 +81,7 @@ with col_reset:
         st.rerun()
 
 # --- CARICAMENTO FILE ---
-# ... (Il resto del codice rimane invariato rispetto alla v1.9/v1.8) ...
+# ... (Il resto del codice rimane invariato rispetto alla v2.0) ...
 st.markdown("---")
 st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
