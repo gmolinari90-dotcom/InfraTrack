@@ -7,12 +7,13 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v2.11", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v2.12", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
+# CSS is the same as v2.11, adjusted for the button style from v1.9
 st.markdown("""
 <style>
-    /* ... (Stili generali omessi per brevità) ... */
+    /* ... (General styles omitted for brevity) ... */
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button {
         font-size: 0.85rem !important;
     }
@@ -20,14 +21,13 @@ st.markdown("""
      .stApp .stMarkdown h4 { font-size: 1.1rem !important; margin-bottom: 0.5rem; margin-top: 1rem; }
      .stApp .stMarkdown h5 { font-size: 0.90rem !important; margin-bottom: 0.5rem; margin-top: 0.8rem; }
 
-    /* ---- STILI BOTTONE RESET (Come in v1.9) ---- */
+    /* ---- STILI BOTTONE RESET (Come in v1.9/v2.11) ---- */
     button[data-testid="stButton"][kind="primary"][key="reset_button"] {
         padding: 0.2rem 0.5rem !important; /* Padding originale v1.9 */
         line-height: 1.2 !important;
         font-size: 1.1rem !important;       /* Dimensione icona v1.9 */
-        /* Rimuoviamo min-width/width auto per tornare al default */
-        /* Rimuoviamo display flex specifici, lasciamo fare a Streamlit */
         border-radius: 0.25rem !important;
+        /* Rimuoviamo display flex, min-width, width auto - lasciamo default Streamlit */
     }
      button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled {
         cursor: not-allowed; opacity: 0.5;
@@ -41,7 +41,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v2.11") # Version updated
+st.markdown("## 🚆 InfraTrack v2.12") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
@@ -49,14 +49,15 @@ st.caption("La tua centrale di controllo per progetti infrastrutturali")
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 
-if st.button("🔄 Reset Completo", key="reset_button", help="Resetta l'analisi e permette di caricare un nuovo file", disabled=not st.session_state.file_processed_success):
+# --- MODIFICA: Label del bottone cambiata ---
+if st.button("🔄", key="reset_button", help="Resetta l'analisi", disabled=not st.session_state.file_processed_success):
     st.session_state.widget_key_counter += 1
     st.session_state.file_processed_success = False
     if 'uploaded_file_state' in st.session_state: del st.session_state['uploaded_file_state']
     st.rerun()
 
 # --- CARICAMENTO FILE ---
-# ... (Il resto del codice rimane invariato rispetto alla v2.10) ...
+# ... (Il resto del codice rimane invariato rispetto alla v2.11) ...
 st.markdown("---")
 st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
