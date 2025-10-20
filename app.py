@@ -7,7 +7,7 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v2.6", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v2.7", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -16,32 +16,28 @@ st.markdown("""
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button {
         font-size: 0.85rem !important;
     }
-     .stApp h2 {
-        font-size: 1.5rem !important;
-     }
-     .stApp .stMarkdown h4 {
-         font-size: 1.1rem !important; margin-bottom: 0.5rem; margin-top: 1rem;
-     }
-     .stApp .stMarkdown h5 {
-         font-size: 0.90rem !important; margin-bottom: 0.5rem; margin-top: 0.8rem;
-     }
+     .stApp h2 { font-size: 1.5rem !important; }
+     .stApp .stMarkdown h4 { font-size: 1.1rem !important; margin-bottom: 0.5rem; margin-top: 1rem; }
+     .stApp .stMarkdown h5 { font-size: 0.90rem !important; margin-bottom: 0.5rem; margin-top: 0.8rem; }
+
     /* ---- MODIFICHE BOTTONE RESET ---- */
-    /* Aumentiamo leggermente il padding per contenere l'icona più grande */
+    /* Selettore specifico per il bottone */
     button[data-testid="stButton"][kind="primary"][key="reset_button"] {
-        padding: 0.2rem 0.5rem !important; /* Aumentato padding rispetto a v2.5 */
-        line-height: 1 !important;         /* Mantenuto basso per centrare */
-        font-size: 1.1rem !important;       /* Dimensione icona */
+        padding: 0.15rem 0.4rem !important; /* Manteniamo padding da v2.6 */
+        line-height: 1 !important;         /* Assicura che l'altezza sia minima */
+        font-size: 1.0rem !important;       /* RIDOTTA dimensione icona a 1.0rem */
         min-width: auto !important;
         width: auto !important;
         display: inline-flex !important;
-        align-items: center !important;     /* Centratura verticale */
-        justify-content: center !important; /* Centratura orizzontale */
+        align-items: center !important;     /* Centra verticalmente */
+        justify-content: center !important; /* Centra orizzontalmente */
+        text-align: center !important;      /* Assicura centratura testo/icona */
         border-radius: 0.25rem !important;
     }
      button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled {
         cursor: not-allowed; opacity: 0.5;
      }
-    /* Allinea verticalmente titolo e bottone */
+    /* Allinea verticalmente titolo e bottone nelle colonne */
     div[data-testid="stHorizontalBlock"] > div[style*="flex-direction: row"] {
         display: flex; align-items: center;
     }
@@ -56,13 +52,13 @@ st.markdown("""
 col_title, col_reset = st.columns([0.95, 0.05], vertical_alignment="center")
 
 with col_title:
-    st.markdown("## 🚆 InfraTrack v2.6") # Version updated
+    st.markdown("## 🚆 InfraTrack v2.7") # Version updated
     st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
+# ... (Logica reset omessa per brevità, è la stessa v2.6) ...
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
-
 with col_reset:
     if st.button("🔄", key="reset_button", help="Reset Completo", disabled=not st.session_state.file_processed_success):
         st.session_state.widget_key_counter += 1
@@ -70,8 +66,9 @@ with col_reset:
         if 'uploaded_file_state' in st.session_state: del st.session_state['uploaded_file_state']
         st.rerun()
 
+
 # --- CARICAMENTO FILE ---
-# ... (Il resto del codice rimane invariato rispetto alla v2.5) ...
+# ... (Il resto del codice rimane invariato rispetto alla v2.6) ...
 st.markdown("---")
 st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
