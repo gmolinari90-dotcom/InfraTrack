@@ -7,7 +7,7 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v2.1", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v2.2", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -30,15 +30,20 @@ st.markdown("""
          margin-top: 0.8rem;
      }
     /* ---- MODIFICHE BOTTONE RESET ---- */
-    /* Applichiamo stili specifici al bottone di reset tramite la sua key */
-    button[data-testid="stButton"][kind="primary"][key="reset_button"] {
-        padding: 0.1rem 0.2rem !important; /* RIDOTTO ULTERIORMENTE padding orizzontale */
+    /* Selettore più specifico e proprietà aggiuntive */
+    div[data-testid="stButton"] button[kind="primary"][key="reset_button"] {
+        padding: 0.05rem 0.15rem !important; /* Padding minimo per non schiacciare l'icona */
         line-height: 1 !important;
-        font-size: 1.0rem !important; /* Leggermente ridotto per adattarsi */
-        min-width: auto !important;
+        font-size: 1.0rem !important;
+        min-width: fit-content !important; /* Forza la larghezza minima */
+        width: fit-content !important;     /* Forza la larghezza massima */
+        display: inline-flex !important;   /* Migliora allineamento interno */
+        align-items: center !important;
+        justify-content: center !important;
+        border-radius: 0.25rem !important; /* Riduci raggio bordi */
     }
      /* Stile per bottone reset disabilitato */
-     button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled {
+     div[data-testid="stButton"] button[kind="primary"][key="reset_button"]:disabled {
         cursor: not-allowed;
         opacity: 0.5;
      }
@@ -59,10 +64,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- TITOLO E HEADER CON BOTTONE RESET ALLINEATO ---
-col_title, col_reset = st.columns([0.95, 0.05]) # Manteniamo le colonne
+col_title, col_reset = st.columns([0.95, 0.05])
 
 with col_title:
-    st.markdown("## 🚆 InfraTrack v2.1") # Version updated
+    st.markdown("## 🚆 InfraTrack v2.2") # Version updated
     st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
@@ -71,7 +76,6 @@ if 'widget_key_counter' not in st.session_state:
 if 'file_processed_success' not in st.session_state:
     st.session_state.file_processed_success = False
 
-# Bottone Reset (solo icona, disabilitato, nella seconda colonna)
 with col_reset:
     if st.button("🔄", key="reset_button", help="Reset Completo", disabled=not st.session_state.file_processed_success):
         st.session_state.widget_key_counter += 1
@@ -81,7 +85,7 @@ with col_reset:
         st.rerun()
 
 # --- CARICAMENTO FILE ---
-# ... (Il resto del codice rimane invariato rispetto alla v2.0) ...
+# ... (Il resto del codice rimane invariato rispetto alla v2.1) ...
 st.markdown("---")
 st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
