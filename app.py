@@ -22,7 +22,7 @@ uploaded_file = st.file_uploader("Seleziona il file .XML esportato da MS Project
 
 if uploaded_file is not None:
     placeholder.empty()
-    
+
     with st.spinner('Caricamento e analisi del file in corso...'):
         try:
             file_content_bytes = uploaded_file.getvalue()
@@ -33,29 +33,29 @@ if uploaded_file is not None:
             st.markdown("---")
             st.header("📄 Informazioni Generali del Progetto")
 
-            # --- NUOVA LOGICA DI ESTRAZIONE: SCANSIONE MANUALE ---
-            
+            # --- LOGICA DI ESTRAZIONE v0.5: CERCA UID 1 ---
+
             project_name = "Attività con UID 1 non trovata"
             formatted_cost = "€ 0,00"
-            
+
             # 1. Prendiamo TUTTE le attività del progetto
             all_tasks = tree.findall('.//msp:Task', namespaces=ns)
-            
+
             # 2. Le controlliamo una per una
             for task in all_tasks:
                 # Estraiamo l'UID di questa attività
                 uid = task.findtext('msp:UID', namespaces=ns)
-                
+
                 # 3. Se l'UID è '1', prendiamo i dati e ci fermiamo
                 if uid == '1':
                     project_name = task.findtext('msp:Name', namespaces=ns) or "Nome non trovato"
-                    
+
                     total_cost_str = task.findtext('msp:Cost', namespaces=ns) or "0"
                     total_cost = float(total_cost_str)
                     formatted_cost = f"€ {total_cost:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                    
-                    # FONDAMENTALE: Usciamo dal ciclo appena trovata la nostra attività
-                    break 
+
+                    # Usciamo dal ciclo appena trovata la nostra attività
+                    break
 
             col1, col2 = st.columns(2)
             with col1:
@@ -66,25 +66,25 @@ if uploaded_file is not None:
             # Estrazione TUP e TUF (logica invariata)
             st.subheader("🗓️ Milestone Principali (TUP e TUF)")
             milestones_data = []
-            
+
             for task in all_tasks: # Usiamo la stessa lista di attività già caricata
                 is_milestone_text = (task.findtext('msp:Milestone', namespaces=ns) or '0').lower()
                 is_milestone = is_milestone_text == '1' or is_milestone_text == 'true'
-                
+
                 task_name = task.findtext('msp:Name', namespaces=ns) or ""
-                
+
                 if is_milestone and ("TUP" in task_name.upper() or "TUF" in task_name.upper()):
                     start_date_str = task.findtext('msp:Start', namespaces=ns)
                     finish_date_str = task.findtext('msp:Finish', namespaces=ns)
                     start_date = datetime.fromisoformat(start_date_str).date() if start_date_str else "N/D"
                     finish_date = datetime.fromisoformat(finish_date_str).date() if finish_date_str else "N/D"
-                    
+
                     milestones_data.append({
                         "Nome Completo": task_name,
                         "Data Inizio": start_date,
                         "Data Fine": finish_date
                     })
-            
+
             if milestones_data:
                 df_milestones = pd.DataFrame(milestones_data).drop_duplicates()
                 st.dataframe(df_milestones, use_container_width=True)
