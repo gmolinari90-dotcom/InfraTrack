@@ -1,4 +1,4 @@
-# --- v3.9 ---
+# --- v3.10 ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -8,10 +8,10 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v3.9", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v3.10", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
-# ... (CSS Identico a v3.8) ...
+# ... (CSS Identico a v3.9) ...
 st.markdown("""
 <style>
     /* ... */
@@ -31,11 +31,11 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v3.9") # Version updated
+st.markdown("## 🚆 InfraTrack v3.10") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
-# ... (Identico a v3.8) ...
+# ... (Identico a v3.9) ...
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 if st.button("🔄", key="reset_button", help="Resetta l'analisi", disabled=not st.session_state.file_processed_success):
@@ -47,7 +47,7 @@ if st.button("🔄", key="reset_button", help="Resetta l'analisi", disabled=not 
 
 
 # --- CARICAMENTO FILE ---
-# ... (Identico a v3.8) ...
+# ... (Identico a v3.9) ...
 st.markdown("---"); st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
 uploaded_file = st.file_uploader("Seleziona il file .XML...", type=["xml"], label_visibility="collapsed", key=uploader_key)
@@ -61,7 +61,7 @@ if uploaded_file is not None:
     if not st.session_state.file_processed_success:
         with st.spinner('Caricamento e analisi completa del file in corso...'):
             try:
-                # ... (Logica parsing e estrazione dati identica a v3.8, inclusa correzione TotalSlack) ...
+                # ... (Logica parsing e estrazione dati identica a v3.9) ...
                 uploaded_file.seek(0); file_content_bytes = uploaded_file.read()
                 parser = etree.XMLParser(recover=True); tree = etree.fromstring(file_content_bytes, parser=parser)
                 ns = {'msp': 'http://schemas.microsoft.com/project'}
@@ -82,7 +82,6 @@ if uploaded_file is not None:
                 potential_milestones = {}; all_tasks = tree.findall('.//msp:Task', namespaces=ns)
                 tup_tuf_pattern = re.compile(r'(?i)(TUP|TUF)\s*\d*'); all_tasks_data_list = []
                 def format_duration_from_xml(duration_str, work_hours_per_day=8.0):
-                     # ... (funzione durata omessa per brevità) ...
                      if not duration_str or work_hours_per_day <= 0: return "0g"
                      try:
                          if duration_str.startswith('T'): duration_str = 'P' + duration_str
@@ -92,7 +91,6 @@ if uploaded_file is not None:
                          work_days = total_hours / work_hours_per_day; return f"{round(work_days)}g"
                      except Exception: return "N/D"
                 for task in all_tasks:
-                     # ... (Logica estrazione dati attività e TUP/TUF identica a v3.8) ...
                     uid = task.findtext('msp:UID', namespaces=ns); name = task.findtext('msp:Name', namespaces=ns) or ""
                     start_str = task.findtext('msp:Start', namespaces=ns); finish_str = task.findtext('msp:Finish', namespaces=ns)
                     duration_str = task.findtext('msp:Duration', namespaces=ns); cost_str = task.findtext('msp:Cost', namespaces=ns) or "0"
@@ -102,9 +100,7 @@ if uploaded_file is not None:
                     cost_euros = float(cost_str) / 100.0 if cost_str else 0.0; duration_formatted = format_duration_from_xml(duration_str)
                     total_slack_days = 0 # Correzione Slack
                     if total_slack_str:
-                         try:
-                              slack_duration = isodate.parse_duration('PT' + total_slack_str + 'S') # Assume formato secondi
-                              total_slack_days = round(slack_duration.total_seconds() / (8 * 3600))
+                         try: slack_duration = isodate.parse_duration('PT' + total_slack_str + 'S'); total_slack_days = round(slack_duration.total_seconds() / (8 * 3600))
                          except ValueError:
                               try: total_slack_days = round(float(total_slack_str) / (8 * 60))
                               except ValueError: total_slack_days = 0
@@ -126,7 +122,9 @@ if uploaded_file is not None:
                              if potential_milestones[tup_tuf_key]["DurataSecondi"] == 0: potential_milestones[tup_tuf_key] = current_task_data
                              elif duration_seconds > potential_milestones[tup_tuf_key]["DurataSecondi"]: potential_milestones[tup_tuf_key] = current_task_data
                 final_milestones_data = []
-                for key in potential_milestones: final_milestones_data.append({...}) # Omissis
+                for key in potential_milestones:
+                     data = potential_milestones[key]
+                     final_milestones_data.append({"Nome Completo": data["Nome Completo"], "Data Inizio": data["Data Inizio"], "Data Fine": data["Data Fine"], "Durata": data["Durata"], "DataInizioObj": data["DataInizioObj"]})
                 if final_milestones_data:
                     df_milestones = pd.DataFrame(final_milestones_data).sort_values(by="DataInizioObj").reset_index(drop=True)
                     st.session_state['df_milestones_display'] = df_milestones[["Nome Completo", "Durata", "Data Inizio", "Data Fine"]]
@@ -148,15 +146,9 @@ if uploaded_file is not None:
         st.markdown("##### 📄 Informazioni Generali dell'Appalto")
         project_name = st.session_state.get('project_name', "N/D")
         formatted_cost = st.session_state.get('formatted_cost', "N/D")
-
-        # --- CORREZIONE SYNTAX ERROR ---
         col1_disp, col2_disp = st.columns(2)
-        with col1_disp:
-            st.markdown(f"**Nome:** {project_name}")
-        with col2_disp:
-            st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
-        # --- FINE CORREZIONE ---
-
+        with col1_disp: st.markdown(f"**Nome:** {project_name}")
+        with col2_disp: st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
         st.markdown("##### 🗓️ Termini Utili Contrattuali (TUP/TUF)")
         df_display = st.session_state.get('df_milestones_display')
         if df_display is not None and not df_display.empty:
@@ -166,9 +158,7 @@ if uploaded_file is not None:
             excel_data = output.getvalue(); st.download_button(label="Scarica (Excel)", data=excel_data, file_name="...", mime="...")
         else: st.warning("Nessun Termine Utile (TUP o TUF) trovato nel file.")
 
-
         # --- Sezione 3: Analisi Avanzata ---
-        # ... (Identica a v3.8) ...
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
         if not default_start: default_start = date.today()
@@ -196,13 +186,21 @@ if uploaded_file is not None:
                     selected_slack = st.slider("Seleziona Margine Flessibilità Totale (giorni)", min_value=0, max_value=slider_max, value=st.session_state.get('slider_value', 0), step=1, key="slack_slider", help="...")
                     st.session_state['slider_value'] = selected_slack
                     if st.button("📈 Analizza Criticità", key="analyze_critical_path"):
-                        st.write(f"DEBUG: Filtraggio con Slack <= {selected_slack} nel periodo {selected_start_date.strftime('%d/%m/%Y')} - {selected_finish_date.strftime('%d/%m/%Y')}")
-                        st.write(f"DEBUG: Numero attività nel periodo prima del filtro slack: {len(filtered_tasks_df)}")
+                        # ... (Debug prints omessi per brevità) ...
                         critical_subcritical_tasks = filtered_tasks_df[ filtered_tasks_df['TotalSlackDays'] <= selected_slack ]
-                        st.write(f"DEBUG: Numero attività dopo filtro slack: {len(critical_subcritical_tasks)}")
                         if not critical_subcritical_tasks.empty:
                             st.write(f"Attività critiche/sub-critiche (Slack <= {selected_slack} giorni):")
-                            display_critical_df = critical_subcritical_tasks[["WBS", "Name", "Duration", "Start", "Finish", "TotalSlackDays"]].rename(columns={"Name": "Nome Attività", ...}) # Omissis
+                            # --- CORREZIONE SYNTAX ERROR ---
+                            display_critical_df = critical_subcritical_tasks[[
+                                "WBS", "Name", "Duration", "Start", "Finish", "TotalSlackDays"
+                            ]].rename(columns={
+                                "Name": "Nome Attività",
+                                "Duration": "Durata",
+                                "Start": "Inizio",
+                                "Finish": "Fine",
+                                "TotalSlackDays": "Slack (g)" # Mapping completo
+                            })
+                            # --- FINE CORREZIONE ---
                             display_critical_df['Inizio'] = pd.to_datetime(display_critical_df['Inizio']).dt.strftime('%d/%m/%Y'); display_critical_df['Fine'] = pd.to_datetime(display_critical_df['Fine']).dt.strftime('%d/%m/%Y')
                             st.dataframe(display_critical_df, use_container_width=True, hide_index=True)
                             output_crit = BytesIO() # ... (download excel)
