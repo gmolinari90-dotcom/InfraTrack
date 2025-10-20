@@ -1,4 +1,4 @@
-# --- v4.10 ---
+# --- v4.11 ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -9,10 +9,10 @@ from io import BytesIO
 import math
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v4.10", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v4.11", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
-# ... (CSS Identico a v4.9) ...
+# ... (CSS Identico a v4.10) ...
 st.markdown("""
 <style>
     /* ... */
@@ -32,11 +32,11 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v4.10") # Version updated
+st.markdown("## 🚆 InfraTrack v4.11") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
-# ... (Identico a v4.9) ...
+# ... (Identico a v4.10) ...
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 if st.button("🔄", key="reset_button", help="Resetta l'analisi", disabled=not st.session_state.file_processed_success):
@@ -48,7 +48,7 @@ if st.button("🔄", key="reset_button", help="Resetta l'analisi", disabled=not 
 
 
 # --- CARICAMENTO FILE ---
-# ... (Identico a v4.9) ...
+# ... (Identico a v4.10) ...
 st.markdown("---"); st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
 uploaded_file = st.file_uploader("Seleziona il file .XML...", type=["xml"], label_visibility="collapsed", key=uploader_key)
@@ -61,17 +61,17 @@ if uploaded_file is not None:
     if not st.session_state.file_processed_success:
         with st.spinner('Caricamento e analisi completa del file in corso...'):
             try:
-                # ... (Logica parsing e estrazione dati identica a v4.9) ...
+                # ... (Logica parsing e estrazione dati generali/date progetto/minuti_giorno identica a v4.10) ...
                 uploaded_file.seek(0); file_content_bytes = uploaded_file.read()
                 parser = etree.XMLParser(recover=True); tree = etree.fromstring(file_content_bytes, parser=parser)
                 ns = {'msp': 'http://schemas.microsoft.com/project'}
                 project_name = "N/D"; formatted_cost = "€ 0,00"; project_start_date = None; project_finish_date = None; minutes_per_day = 480
                 default_calendar = tree.find(".//msp:Calendar[msp:UID='1']", namespaces=ns)
-                if default_calendar is not None: # ... (calcolo minutes_per_day omesso) ...
-                    working_day = default_calendar.find(".//msp:WeekDay[msp:DayType='1']", namespaces=ns)
-                    if working_day is not None:
-                        working_minutes = 0 #...
-                        if working_minutes > 0: minutes_per_day = working_minutes
+                if default_calendar is not None: # ... (calcolo minutes_per_day omesso per brevità) ...
+                     working_day = default_calendar.find(".//msp:WeekDay[msp:DayType='1']", namespaces=ns)
+                     if working_day is not None:
+                          working_minutes = 0; #... omitted calculation ...
+                          if working_minutes > 0: minutes_per_day = working_minutes
                 st.session_state['minutes_per_day'] = minutes_per_day
                 task_uid_1 = tree.find(".//msp:Task[msp:UID='1']", namespaces=ns)
                 if task_uid_1 is not None: # ... (estrazione nome/costo/date progetto omessa) ...
@@ -85,35 +85,52 @@ if uploaded_file is not None:
                 if project_start_date > project_finish_date: project_finish_date = project_start_date + timedelta(days=1)
                 st.session_state['project_name'] = project_name; st.session_state['formatted_cost'] = formatted_cost
                 st.session_state['project_start_date'] = project_start_date; st.session_state['project_finish_date'] = project_finish_date
+
+                # --- Estrazione Dati Attività e TUP/TUF ---
                 potential_milestones = {}; all_tasks = tree.findall('.//msp:Task', namespaces=ns)
                 tup_tuf_pattern = re.compile(r'(?i)(TUP|TUF)\s*\d*'); all_tasks_data_list = []
                 def format_duration_from_xml(duration_str):
-                     # ... (funzione durata identica a v4.9) ...
+                     # ... (funzione durata identica a v4.10) ...
                      mpd = st.session_state.get('minutes_per_day', 480); #...
                      if not duration_str or mpd <= 0: return "0g"
                      try: #...
                         work_days = total_hours / (mpd / 60.0); return f"{round(work_days)}g"
                      except Exception: return "N/D"
+
                 for task in all_tasks:
-                    # ... (Logica estrazione dati attività identica a v4.9, incluso calcolo slack) ...
                     uid = task.findtext('msp:UID', namespaces=ns); name = task.findtext('msp:Name', namespaces=ns) or ""; #...
                     start_date = datetime.fromisoformat(start_str).date() if start_str else None; finish_date = datetime.fromisoformat(finish_str).date() if finish_str else None
-                    #...
+                    duration_formatted = format_duration_from_xml(duration_str)
+                    cost_euros = float(cost_str) / 100.0 if cost_str else 0.0
+                    is_milestone = is_milestone_text == '1' or is_milestone_text == 'true'
+                    wbs = task.findtext('msp:WBS', namespaces=ns) or ""
+                    total_slack_minutes_str = task.findtext('msp:TotalSlack', namespaces=ns) or "0"
+
+                    # --- CORREZIONE CALCOLO SLACK try/except ---
                     total_slack_days = 0
                     if total_slack_minutes_str:
-                         try: slack_minutes = float(total_slack_minutes_str); mpd = st.session_state.get('minutes_per_day', 480)
-                              if mpd > 0: total_slack_days = math.ceil(slack_minutes / mpd)
-                         except ValueError: total_slack_days = 0
-                    if uid != '0': all_tasks_data_list.append({...}) # Omissis append
+                         try: # Questo è il blocco try
+                              slack_minutes = float(total_slack_minutes_str)
+                              mpd = st.session_state.get('minutes_per_day', 480)
+                              if mpd > 0:
+                                   total_slack_days = math.ceil(slack_minutes / mpd)
+                         except ValueError: # Blocco except CORRETTAMENTE INDENTATO
+                              total_slack_days = 0 # Se non è un numero, slack è 0
+                    # --- FINE CORREZIONE ---
 
-                    match = tup_tuf_pattern.search(name) # Logica TUP/TUF (identica a v4.9)
-                    if match: # ... (omessa per brevità) ...
+                    if uid != '0':
+                         all_tasks_data_list.append({"UID": uid, "Name": name, "Start": start_date, "Finish": finish_date, "Duration": duration_formatted, "Cost": cost_euros, "Milestone": is_milestone, "WBS": wbs, "TotalSlackDays": total_slack_days})
+
+                    # Logica TUP/TUF (identica a v4.10)
+                    match = tup_tuf_pattern.search(name)
+                    if match:
+                         # ... (omessa per brevità) ...
                          current_task_data = {...} # Omissis data
                          existing_duration_seconds = potential_milestones.get(tup_tuf_key, {}).get("DurataSecondi", -1)
                          if tup_tuf_key not in potential_milestones: potential_milestones[tup_tuf_key] = current_task_data
                          elif not is_pure_milestone_duration: #... (omissis logica selezione)
 
-                # Salvataggio dati TUP/TUF e All Tasks (Identico a v4.9)
+                # Salvataggio dati TUP/TUF e All Tasks (Identico a v4.10)
                 final_milestones_data = [] # ... (omissis)
                 for key in potential_milestones: final_milestones_data.append({...})
                 if final_milestones_data: # ... (omissis creazione df e salvataggio in sessione) ...
@@ -133,20 +150,15 @@ if uploaded_file is not None:
 
     # --- VISUALIZZAZIONE DATI E ANALISI AVANZATA ---
     if st.session_state.file_processed_success:
+        # --- Sezione 2: Analisi Preliminare (Identica a v4.10) ---
         st.markdown("---")
         st.markdown("#### 2. Analisi Preliminare")
         st.markdown("##### 📄 Informazioni Generali dell'Appalto")
         project_name = st.session_state.get('project_name', "N/D")
         formatted_cost = st.session_state.get('formatted_cost', "N/D")
-
-        # --- CORREZIONE SYNTAX ERROR ---
-        col1_disp, col2_disp = st.columns(2) # Assegnazione su una riga
-        with col1_disp: # Blocco 'with' su riga separata
-            st.markdown(f"**Nome:** {project_name}")
-        with col2_disp: # Blocco 'with' su riga separata
-            st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
-        # --- FINE CORREZIONE ---
-
+        col1_disp, col2_disp = st.columns(2)
+        with col1_disp: st.markdown(f"**Nome:** {project_name}")
+        with col2_disp: st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
         st.markdown("##### 🗓️ Termini Utili Contrattuali (TUP/TUF)")
         df_display = st.session_state.get('df_milestones_display')
         if df_display is not None and not df_display.empty:
@@ -156,7 +168,8 @@ if uploaded_file is not None:
             excel_data = output.getvalue(); st.download_button(label="Scarica (Excel)", data=excel_data, file_name="...", mime="...")
         else: st.warning("Nessun Termine Utile (TUP o TUF) trovato nel file.")
 
-        # --- Sezione 3: Analisi Avanzata (Identica a v4.9) ---
+
+        # --- Sezione 3: Analisi Avanzata (Identica a v4.10) ---
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         # ... (Logica date default e date_input identica) ...
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
@@ -174,7 +187,7 @@ if uploaded_file is not None:
         all_tasks_df = st.session_state.get('all_tasks_data')
         if all_tasks_df is not None and not all_tasks_df.empty:
             try:
-                # ... (Logica filtro data e analisi criticità identica a v4.9) ...
+                # ... (Logica filtro data e analisi criticità identica a v4.10) ...
                 tasks_to_filter = st.session_state['all_tasks_data'].copy()
                 tasks_to_filter['Start'] = pd.to_datetime(tasks_to_filter['Start'], errors='coerce').dt.date
                 tasks_to_filter['Finish'] = pd.to_datetime(tasks_to_filter['Finish'], errors='coerce').dt.date
