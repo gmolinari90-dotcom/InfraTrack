@@ -7,7 +7,7 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v2.9", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v2.10", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -20,20 +20,18 @@ st.markdown("""
      .stApp .stMarkdown h4 { font-size: 1.1rem !important; margin-bottom: 0.5rem; margin-top: 1rem; }
      .stApp .stMarkdown h5 { font-size: 0.90rem !important; margin-bottom: 0.5rem; margin-top: 0.8rem; }
 
-    /* ---- MODIFICHE BOTTONE RESET ---- */
+    /* ---- RIPRISTINO STILI BOTTONE RESET (simili a v2.0) ---- */
     /* Selettore specifico */
     button[data-testid="stButton"][kind="primary"][key="reset_button"] {
-        display: flex !important;           /* Assicura flexbox */
-        align-items: center !important;     /* Centra verticalmente */
-        justify-content: center !important; /* Centra orizzontalmente */
-        padding: 0.2rem 0.4rem !important;  /* Padding simmetrico */
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 0.1rem 0.3rem !important;  /* Padding ridotto come in v2.0/v2.1 */
         line-height: 1 !important;
-        font-size: 1.0rem !important;       /* Dimensione icona */
+        font-size: 1.1rem !important;       /* Dimensione icona come in v2.0 */
         min-width: auto !important;
         width: auto !important;
         border-radius: 0.25rem !important;
-        vertical-align: middle !important; /* Aggiunto per sicurezza */
-        text-align: center !important;     /* Mantenuto per sicurezza */
     }
      button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled {
         cursor: not-allowed; opacity: 0.5;
@@ -42,7 +40,7 @@ st.markdown("""
     div[data-testid="stHorizontalBlock"] > div[style*="flex-direction: row"] {
         display: flex; align-items: center;
     }
-     /* ---- FINE MODIFICHE BOTTONE ---- */
+     /* ---- FINE RIPRISTINO STILI BOTTONE ---- */
 
     .stApp { padding-top: 2rem; }
     .stDataFrame td { text-align: center !important; }
@@ -50,14 +48,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- TITOLO E HEADER CON BOTTONE RESET A DESTRA ---
+# Ripristiniamo il layout colonne di v2.0
 col_title, col_reset = st.columns([0.95, 0.05], vertical_alignment="center")
 
 with col_title:
-    st.markdown("## 🚆 InfraTrack v2.9") # Version updated
+    st.markdown("## 🚆 InfraTrack v2.10") # Version updated
     st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
-# ... (Logica reset omessa per brevità, è la stessa v2.8) ...
+# ... (Logica reset omessa per brevità, è la stessa v2.9) ...
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 with col_reset:
@@ -69,7 +68,7 @@ with col_reset:
 
 
 # --- CARICAMENTO FILE ---
-# ... (Il resto del codice rimane invariato rispetto alla v2.8) ...
+# ... (Il resto del codice rimane invariato rispetto alla v2.9) ...
 st.markdown("---")
 st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
