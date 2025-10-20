@@ -7,12 +7,12 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v1.8", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v1.9", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
 <style>
-    /* ... (CSS omesso per brevità) ... */
+    /* ... (Stili generali omessi per brevità) ... */
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button {
         font-size: 0.85rem !important;
     }
@@ -29,15 +29,15 @@ st.markdown("""
          margin-bottom: 0.5rem;
          margin-top: 0.8rem;
      }
-     /* ---- MODIFICHE BOTTONE RESET ---- */
-    .stApp .stButton>button {
-        padding: 0.1rem 0.3rem !important; /* Riduci padding per adattare all'icona */
-        line-height: 1 !important;
-        font-size: 1rem !important; /* Leggermente più grande per l'icona */
-        min-width: auto !important; /* Permetti al bottone di restringersi */
+    /* ---- MODIFICHE BOTTONE RESET ---- */
+    /* Applichiamo stili specifici al bottone di reset tramite la sua key */
+    button[data-testid="stButton"][kind="primary"][key="reset_button"] {
+        padding: 0.2rem 0.5rem !important;
+        line-height: 1.2 !important; /* Aumenta leggermente per l'icona più grande */
+        font-size: 1.1rem !important; /* Ingrandisci l'icona (e il testo, se ci fosse) */
     }
      /* Stile per bottone reset disabilitato */
-     .stApp .stButton>button:disabled {
+     button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled {
         cursor: not-allowed;
         opacity: 0.5;
      }
@@ -49,21 +49,12 @@ st.markdown("""
     .stDataFrame td {
         text-align: center !important;
     }
-    /* Allinea verticalmente titolo e bottone reset nelle colonne */
-    div[data-testid="stHorizontalBlock"] > div {
-        display: flex;
-        align-items: center;
-    }
 </style>
 """, unsafe_allow_html=True)
 
-# --- TITOLO E HEADER CON BOTTONE RESET ALLINEATO ---
-# Usiamo le colonne con allineamento verticale
-col_title, col_reset = st.columns([0.95, 0.05], vertical_alignment="center") # Più spazio titolo, meno al bottone
-
-with col_title:
-    st.markdown("## 🚆 InfraTrack v1.8") # Version updated
-    st.caption("La tua centrale di controllo per progetti infrastrutturali")
+# --- TITOLO E HEADER ---
+st.markdown("## 🚆 InfraTrack v1.9") # Version updated
+st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
 if 'widget_key_counter' not in st.session_state:
@@ -71,14 +62,14 @@ if 'widget_key_counter' not in st.session_state:
 if 'file_processed_success' not in st.session_state:
     st.session_state.file_processed_success = False
 
-# Bottone Reset (solo icona, disabilitato, in colonna separata)
-with col_reset:
-    if st.button("🔄", key="reset_button", help="Reset Completo", disabled=not st.session_state.file_processed_success):
-        st.session_state.widget_key_counter += 1
-        st.session_state.file_processed_success = False
-        if 'uploaded_file_state' in st.session_state:
-            del st.session_state['uploaded_file_state']
-        st.rerun()
+# Bottone Reset (riportato sotto il titolo, con icona più grande)
+if st.button("🔄 Reset Completo", key="reset_button", help="Resetta l'analisi e permette di caricare un nuovo file", disabled=not st.session_state.file_processed_success):
+    st.session_state.widget_key_counter += 1
+    st.session_state.file_processed_success = False
+    if 'uploaded_file_state' in st.session_state:
+        del st.session_state['uploaded_file_state']
+    st.rerun()
+
 
 # --- CARICAMENTO FILE ---
 st.markdown("---")
@@ -95,18 +86,21 @@ uploaded_file = st.file_uploader(
 if st.session_state.file_processed_success and 'uploaded_file_state' in st.session_state :
      st.success('File XML analizzato con successo!')
 
+
 # --- Mantenimento stato file caricato ---
 if uploaded_file is not None:
     st.session_state['uploaded_file_state'] = uploaded_file
-elif 'uploaded_file_state' in st.session_state:
-     uploaded_file = st.session_state['uploaded_file_state']
+# Togliamo l'else: se non c'è file caricato E non c'è stato, semplicemente non procede
+# elif 'uploaded_file_state' in st.session_state:
+#      uploaded_file = st.session_state['uploaded_file_state']
+
 
 # --- INIZIO ANALISI ---
 if uploaded_file is not None:
     if not st.session_state.file_processed_success:
         with st.spinner('Caricamento e analisi del file in corso...'):
             try:
-                # ... (Logica parsing XML e estrazione dati omessa per brevità, è la stessa v1.7) ...
+                # ... (Logica parsing XML e estrazione dati omessa per brevità, è la stessa v1.8) ...
                 uploaded_file.seek(0); file_content_bytes = uploaded_file.read()
                 parser = etree.XMLParser(recover=True); tree = etree.fromstring(file_content_bytes, parser=parser)
                 ns = {'msp': 'http://schemas.microsoft.com/project'}
