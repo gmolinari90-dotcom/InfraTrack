@@ -7,7 +7,7 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v1.4", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v1.5", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -40,34 +40,66 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v1.4") # Version updated
+st.markdown("## 🚆 InfraTrack v1.5") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
-# --- BOTTONE RESET ---
-if st.button("🔄 Reset Script"): # Etichetta leggermente modificata per chiarezza
-    # st.rerun() riesegue lo script Python dall'inizio.
-    # Per un reset completo che svuoti anche il widget file,
-    # è necessario un refresh manuale del browser (F5 / Cmd+R).
+# --- GESTIONE RESET CON SESSION STATE ---
+# Inizializza il contatore per la chiave del file uploader se non esiste
+if 'widget_key_counter' not in st.session_state:
+    st.session_state.widget_key_counter = 0
+
+# Bottone Reset
+if st.button("🔄 Reset Completo"):
+    # Incrementa il contatore per cambiare la chiave del widget
+    st.session_state.widget_key_counter += 1
+    # Pulisce esplicitamente lo stato del file caricato (se presente in sessione)
+    if 'uploaded_file_state' in st.session_state:
+        del st.session_state['uploaded_file_state']
+    # Ricarica l'app
     st.rerun()
 
 # --- CARICAMENTO FILE ---
 st.markdown("---")
 st.markdown("#### 1. Carica la Baseline di Riferimento")
 
-uploaded_file = st.file_uploader("Seleziona il file .XML esportato da MS Project", type=["xml"], label_visibility="collapsed", key="file_uploader_key")
+# Usa una chiave dinamica basata sul contatore
+uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
+uploaded_file = st.file_uploader(
+    "Seleziona il file .XML esportato da MS Project",
+    type=["xml"],
+    label_visibility="collapsed",
+    key=uploader_key
+)
 
+# Salva lo stato del file caricato in session state per persistenza tra rerun parziali
 if uploaded_file is not None:
+    st.session_state['uploaded_file_state'] = uploaded_file
+elif 'uploaded_file_state' in st.session_state:
+     # Se non c'è un nuovo file caricato ma uno stato salvato, usalo
+     # Utile se altre parti dell'app causano un rerun senza un reset completo
+     uploaded_file = st.session_state['uploaded_file_state']
+
+
+# --- INIZIO ANALISI (Solo se un file è stato caricato) ---
+if uploaded_file is not None:
+    st.markdown("---")
+    # --- NUOVO TITOLO ---
+    st.markdown("#### 2. Analisi Preliminare")
+
     with st.spinner('Caricamento e analisi del file in corso...'):
         try:
-            # ... (Logica di parsing XML e estrazione dati generali omessa per brevità, è la stessa) ...
-            file_content_bytes = uploaded_file.getvalue()
+            # Leggi il contenuto solo una volta all'inizio dell'analisi
+            # Assicurati che il puntatore del file sia all'inizio
+            uploaded_file.seek(0)
+            file_content_bytes = uploaded_file.read()
+
             parser = etree.XMLParser(recover=True)
             tree = etree.fromstring(file_content_bytes, parser=parser)
             ns = {'msp': 'http://schemas.microsoft.com/project'}
 
             st.success('File XML analizzato con successo!')
             st.markdown("---")
-            st.markdown("#### 📄 Informazioni Generali del Progetto")
+            st.markdown("##### 📄 Informazioni Generali del Progetto") # Leggermente più piccolo
 
             project_name = "Attività con UID 1 non trovata"
             formatted_cost = "€ 0,00"
@@ -83,7 +115,7 @@ if uploaded_file is not None:
             with col2: st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
 
 
-            st.markdown("##### 🗓️ Milestone Principali (TUP/TUF)")
+            st.markdown("###### 🗓️ Milestone Principali (TUP/TUF)") # Ancora più piccolo
 
             potential_milestones = {}
             all_tasks = tree.findall('.//msp:Task', namespaces=ns)
@@ -104,7 +136,7 @@ if uploaded_file is not None:
 
 
             for task in all_tasks:
-                # ... (Logica estrazione TUP/TUF omessa per brevità, è la stessa) ...
+                # ... (Logica estrazione TUP/TUF omessa per brevità) ...
                 task_name = task.findtext('msp:Name', namespaces=ns) or ""
                 match = tup_tuf_pattern.search(task_name)
                 if match:
@@ -146,10 +178,8 @@ if uploaded_file is not None:
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     df_display.to_excel(writer, index=False, sheet_name='Milestones')
                 excel_data = output.getvalue()
-
-                # --- MODIFICA ETICHETTA BOTTONE DOWNLOAD ---
                 st.download_button(
-                    label="Scarica (Excel)", # Etichetta modificata
+                    label="Scarica (Excel)",
                     data=excel_data,
                     file_name="milestones_TUP_TUF.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -161,15 +191,32 @@ if uploaded_file is not None:
             # Manteniamo la sezione di debug
             st.markdown("---")
             with st.expander("🔍 Dati Grezzi per Debug (prime 50 righe del file)"):
-                raw_text = file_content_bytes.decode('utf-8', errors='ignore')
-                st.code('\n'.join(raw_text.splitlines()[:50]), language='xml')
+                # Assicurati che il puntatore sia all'inizio prima di leggere di nuovo per il debug
+                uploaded_file.seek(0)
+                debug_content_bytes = uploaded_file.read(2000) # Leggi solo i primi 2KB per il debug
+                try:
+                    raw_text = debug_content_bytes.decode('utf-8', errors='ignore')
+                    st.code('\n'.join(raw_text.splitlines()[:50]), language='xml')
+                except Exception as decode_err:
+                    st.error(f"Errore nella decodifica per il debug: {decode_err}")
 
-        # ... (Gestione eccezioni omessa per brevità) ...
+
         except etree.XMLSyntaxError as e:
              st.error(f"Errore di sintassi XML: {e}")
              st.error("Il file XML sembra essere malformato o incompleto. Prova a riesportarlo da MS Project.")
-             try: raw_text = file_content_bytes.decode('utf-8', errors='ignore'); st.code('\n'.join(raw_text.splitlines()[:20]), language='xml')
-             except Exception: st.error("Impossibile leggere l'inizio del file.")
+             try:
+                 # Assicurati che il puntatore sia all'inizio
+                 uploaded_file.seek(0)
+                 error_content_bytes = uploaded_file.read(1000) # Leggi solo l'inizio
+                 raw_text = error_content_bytes.decode('utf-8', errors='ignore')
+                 st.code('\n'.join(raw_text.splitlines()[:20]), language='xml')
+             except Exception:
+                 st.error("Impossibile leggere l'inizio del file per il debug.")
         except Exception as e:
             st.error(f"Errore imprevisto durante l'analisi del file XML: {e}")
             st.error("Verifica che il file sia un XML valido esportato da MS Project.")
+
+#else:
+    # Questa parte viene eseguita se nessun file è caricato (ad esempio dopo il reset)
+    # st.info("Carica un file XML per iniziare l'analisi.") # Puoi aggiungere un messaggio se vuoi
+    # pass # Non fare nulla se non c'è un file
