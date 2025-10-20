@@ -2,11 +2,11 @@ import streamlit as st
 from lxml import etree
 import pandas as pd
 from datetime import datetime, timedelta
-import re # Importiamo il modulo per le espressioni regolari
-import isodate # Libreria per interpretare le durate ISO 8601 (es. P1DT8H)
+import re
+import isodate # Keep this for parsing the duration string
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v0.9", page_icon="🚆", layout="wide")
+st.set_page_config(page_title="InfraTrack v1.0", page_icon="🚆", layout="wide")
 
 # --- CSS PER RIDURRE LA DIMENSIONE DEI CARATTERI ---
 st.markdown("""
@@ -34,17 +34,22 @@ st.markdown("""
     .stApp {
         padding-top: 2rem; /* Riduci padding superiore */
     }
+    /* Formattazione date nelle tabelle */
+    .stDataFrame td {
+        text-align: center !important; /* Centra testo nelle celle */
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# --- TITOLO E HEADER (Titolo più grande) ---
-# Usiamo H2 per il titolo principale
-st.markdown("## 🚆 InfraTrack v0.9")
+# --- TITOLO E HEADER ---
+st.markdown("## 🚆 InfraTrack v1.0")
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- BOTTONE RESET SEMPRE VISIBILE ---
 if st.button("🔄 Reset e Ricarica Nuovo File"):
-    st.session_state.uploaded_file = None
+    # Clear the file uploader state by modifying the key or using session state
+    if 'uploaded_file' in st.session_state:
+        st.session_state.uploaded_file = None
     st.rerun()
 
 # --- CARICAMENTO FILE ---
@@ -83,90 +88,101 @@ if uploaded_file is not None:
             with col2:
                 st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
 
-            # --- Estrazione TUP e TUF con Durata ---
+            # --- Estrazione TUP e TUF con Durata Corretta ---
             st.markdown("##### 🗓️ Milestone Principali (TUP/TUF)")
-            
+
             potential_milestones = {}
             all_tasks = tree.findall('.//msp:Task', namespaces=ns)
             tup_tuf_pattern = re.compile(r'(?i)(TUP|TUF)\s*\d*')
 
-            # Funzione per convertire durata ISO 8601 in giorni o ore
-            def format_duration(duration_str):
-                if not duration_str:
-                    return "0g" # 0 giorni se la durata non è specificata
+            # --- NUOVA FUNZIONE FORMAT_DURATION ---
+            def format_duration_from_xml(duration_str, work_hours_per_day=8.0):
+                """
+                Converte la durata ISO 8601 (es. PT1432H0M0S) in giorni lavorativi.
+                Assume 8 ore lavorative per giorno se non specificato.
+                Restituisce una stringa formattata "Xg".
+                """
+                if not duration_str or work_hours_per_day <= 0:
+                    return "0g"
                 try:
-                    if not duration_str.startswith('P'):
-                        duration_str = 'P' + duration_str
-                    duration = isodate.parse_duration(duration_str)
-                    
-                    # Convertiamo in giorni totali
-                    total_days = duration.total_seconds() / (24 * 3600)
+                    # Assicura che la stringa inizi con 'P'
+                    if duration_str.startswith('T'): # Formato solo tempo
+                         duration_str = 'P' + duration_str
+                    elif not duration_str.startswith('P'):
+                         return "N/D" # Formato non riconosciuto
 
-                    # Se la durata è meno di un giorno, mostriamo le ore
-                    if total_days < 1 and total_days > 0:
-                        total_hours = duration.total_seconds() / 3600
-                        return f"{total_hours:.1f}h" # Ore con un decimale
-                    elif total_days == 0:
-                         return "0g" # Milestone pura
-                    else:
-                        # Arrotondiamo i giorni al numero intero più vicino
-                        return f"{round(total_days)}g"
+                    duration = isodate.parse_duration(duration_str)
+                    total_hours = duration.total_seconds() / 3600
+
+                    if total_hours == 0:
+                        return "0g" # Milestone pura
+
+                    # Calcola i giorni lavorativi
+                    work_days = total_hours / work_hours_per_day
+                    return f"{round(work_days)}g" # Arrotonda ai giorni interi
+
                 except Exception:
                     return "N/D" # In caso di errore nel parsing
+
 
             for task in all_tasks:
                 task_name = task.findtext('msp:Name', namespaces=ns) or ""
                 match = tup_tuf_pattern.search(task_name)
-                
+
                 if match:
-                    tup_tuf_key = match.group(0).upper()
+                    tup_tuf_key = match.group(0).upper().strip() # Rimuoviamo spazi extra
                     duration_str = task.findtext('msp:Duration', namespaces=ns)
-                    
-                    # Usiamo i secondi totali per un confronto preciso della durata
+
+                    # Usiamo i secondi totali per confronto preciso
                     try:
-                        if duration_str and not duration_str.startswith('P'): duration_str = 'P' + duration_str
-                        duration_obj = isodate.parse_duration(duration_str) if duration_str else timedelta()
+                        if duration_str and duration_str.startswith('T'): duration_str = 'P' + duration_str
+                        duration_obj = isodate.parse_duration(duration_str) if duration_str and duration_str.startswith('P') else timedelta()
                         duration_seconds = duration_obj.total_seconds()
                     except Exception:
-                        duration_seconds = 0 # Durata 0 se errore o non specificata
+                        duration_seconds = 0
 
+                    # Estrai e formatta le date
                     start_date_str = task.findtext('msp:Start', namespaces=ns)
                     finish_date_str = task.findtext('msp:Finish', namespaces=ns)
-                    start_date = datetime.fromisoformat(start_date_str).date() if start_date_str else "N/D"
-                    finish_date = datetime.fromisoformat(finish_date_str).date() if finish_date_str else "N/D"
+                    start_date_obj = datetime.fromisoformat(start_date_str) if start_date_str else None
+                    finish_date_obj = datetime.fromisoformat(finish_date_str) if finish_date_str else None
+
+                    # --- FORMATTAZIONE DATA DD/MM/YYYY ---
+                    start_date_formatted = start_date_obj.strftime("%d/%m/%Y") if start_date_obj else "N/D"
+                    finish_date_formatted = finish_date_obj.strftime("%d/%m/%Y") if finish_date_obj else "N/D"
 
                     current_task_data = {
                         "Nome Completo": task_name,
-                        "Data Inizio": start_date,
-                        "Data Fine": finish_date,
-                        "Durata": format_duration(duration_str), # Salviamo la durata formattata
-                        "DurataSecondi": duration_seconds # Usiamo i secondi per il confronto
+                        "Data Inizio": start_date_formatted,
+                        "Data Fine": finish_date_formatted,
+                        "Durata": format_duration_from_xml(duration_str), # Nuova funzione per la durata
+                        "DurataSecondi": duration_seconds, # Per confronto
+                        "DataInizioObj": start_date_obj # Per ordinamento
                     }
 
-                    # Scegliamo quello con durata maggiore (NON zero)
                     if tup_tuf_key not in potential_milestones or duration_seconds > potential_milestones[tup_tuf_key]["DurataSecondi"]:
-                         # Ignoriamo le milestone pure (durata 0) se abbiamo già trovato un candidato con durata > 0
                          if duration_seconds > 0 or (tup_tuf_key not in potential_milestones):
                               potential_milestones[tup_tuf_key] = current_task_data
-                         # Se la durata attuale è 0 ma abbiamo già una milestone con durata 0, manteniamo la prima trovata (o puoi aggiungere altra logica qui se serve)
                          elif duration_seconds == 0 and tup_tuf_key in potential_milestones and potential_milestones[tup_tuf_key]["DurataSecondi"] == 0:
-                              pass # Manteniamo quella esistente
+                              pass # Manteniamo la prima milestone pura trovata
 
-            # Estraiamo i dati finali, escludendo la durata in secondi usata solo per confronto
+            # Estraiamo i dati finali
             final_milestones_data = []
             for key in potential_milestones:
                 data = potential_milestones[key]
                 final_milestones_data.append({
                     "Nome Completo": data["Nome Completo"],
-                    "Data Inizio": data["Data Inizio"],
-                    "Data Fine": data["Data Fine"],
-                    "Durata": data["Durata"] # Aggiungiamo la durata formattata
+                    "Data Inizio": data["Data Inizio"], # Già formattata
+                    "Data Fine": data["Data Fine"],     # Già formattata
+                    "Durata": data["Durata"],
+                    "DataInizioObj": data["DataInizioObj"] # Per ordinamento
                 })
 
             if final_milestones_data:
                 df_milestones = pd.DataFrame(final_milestones_data)
-                df_milestones = df_milestones.sort_values(by="Data Inizio").reset_index(drop=True)
-                # Definiamo l'ordine delle colonne
+                # Ordina per data di inizio effettiva
+                df_milestones = df_milestones.sort_values(by="DataInizioObj").reset_index(drop=True)
+                # Rimuovi la colonna oggetto data prima di visualizzare e definisci l'ordine
                 st.dataframe(df_milestones[["Nome Completo", "Durata", "Data Inizio", "Data Fine"]], use_container_width=True)
             else:
                 st.warning("Nessuna milestone TUP o TUF trovata nel file.")
