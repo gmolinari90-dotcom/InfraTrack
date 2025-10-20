@@ -7,12 +7,11 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v1.2", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v1.3", page_icon="🚆", layout="wide") # Version updated
 
-# --- CSS PER RIDURRE LA DIMENSIONE DEI CARATTERI ---
+# --- CSS ---
 st.markdown("""
 <style>
-    /* Stili CSS per ridurre dimensioni */
     /* ... (CSS omesso per brevità, è lo stesso di prima) ... */
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button {
         font-size: 0.85rem !important;
@@ -41,24 +40,20 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v1.2") # Version updated
+st.markdown("## 🚆 InfraTrack v1.3") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
-# --- BOTTONE RESET SEMPRE VISIBILE ---
-# CORREZIONE: Rimuoviamo la modifica diretta dello stato
+# --- BOTTONE RESET ---
 if st.button("🔄 Reset e Ricarica Nuovo File"):
-    # Basta chiamare st.rerun()
     st.rerun()
 
 # --- CARICAMENTO FILE ---
 st.markdown("---")
 st.markdown("#### 1. Carica la Baseline di Riferimento")
 
-# Usiamo una chiave unica per il file uploader
 uploaded_file = st.file_uploader("Seleziona il file .XML esportato da MS Project", type=["xml"], label_visibility="collapsed", key="file_uploader_key")
 
 if uploaded_file is not None:
-    # --- IL RESTO DEL CODICE RIMANE IDENTICO ---
     with st.spinner('Caricamento e analisi del file in corso...'):
         try:
             file_content_bytes = uploaded_file.getvalue()
@@ -95,6 +90,7 @@ if uploaded_file is not None:
             tup_tuf_pattern = re.compile(r'(?i)(TUP|TUF)\s*\d*')
 
             def format_duration_from_xml(duration_str, work_hours_per_day=8.0):
+                # ... (funzione durata omessa per brevità, è la stessa di prima) ...
                 if not duration_str or work_hours_per_day <= 0: return "0g"
                 try:
                     if duration_str.startswith('T'): duration_str = 'P' + duration_str
@@ -105,6 +101,7 @@ if uploaded_file is not None:
                     work_days = total_hours / work_hours_per_day
                     return f"{round(work_days)}g"
                 except Exception: return "N/D"
+
 
             for task in all_tasks:
                 task_name = task.findtext('msp:Name', namespaces=ns) or ""
@@ -152,10 +149,14 @@ if uploaded_file is not None:
                 df_milestones = pd.DataFrame(final_milestones_data)
                 df_milestones = df_milestones.sort_values(by="DataInizioObj").reset_index(drop=True)
                 df_display = df_milestones[["Nome Completo", "Durata", "Data Inizio", "Data Fine"]]
-                st.dataframe(df_display, use_container_width=True)
 
+                # --- MODIFICA: NASCONDI INDICE DATAFRAME ---
+                st.dataframe(df_display, use_container_width=True, hide_index=True) # Aggiunto hide_index=True
+
+                # --- Bottone Download Excel (invariato) ---
                 output = BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    # Usiamo df_display che ha le colonne nell'ordine giusto e senza DataInizioObj
                     df_display.to_excel(writer, index=False, sheet_name='Milestones')
                 excel_data = output.getvalue()
                 st.download_button(
@@ -168,11 +169,13 @@ if uploaded_file is not None:
             else:
                 st.warning("Nessuna milestone TUP o TUF trovata nel file.")
 
+            # Manteniamo la sezione di debug
             st.markdown("---")
             with st.expander("🔍 Dati Grezzi per Debug (prime 50 righe del file)"):
                 raw_text = file_content_bytes.decode('utf-8', errors='ignore')
                 st.code('\n'.join(raw_text.splitlines()[:50]), language='xml')
 
+        # ... (Gestione eccezioni omessa per brevità, è la stessa di prima) ...
         except etree.XMLSyntaxError as e:
              st.error(f"Errore di sintassi XML: {e}")
              st.error("Il file XML sembra essere malformato o incompleto. Prova a riesportarlo da MS Project.")
