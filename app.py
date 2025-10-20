@@ -7,10 +7,10 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v2.14", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v2.15", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
-# Stili CSS identici a v2.11
+# Stili CSS identici a v2.11/v2.12
 st.markdown("""
 <style>
     /* ... (Stili generali omessi per brevità) ... */
@@ -21,16 +21,18 @@ st.markdown("""
      .stApp .stMarkdown h4 { font-size: 1.1rem !important; margin-bottom: 0.5rem; margin-top: 1rem; }
      .stApp .stMarkdown h5 { font-size: 0.90rem !important; margin-bottom: 0.5rem; margin-top: 0.8rem; }
 
-    /* ---- STILI BOTTONE RESET (Come in v2.11) ---- */
+    /* ---- STILI BOTTONE RESET ---- */
     button[data-testid="stButton"][kind="primary"][key="reset_button"] {
-        padding: 0.2rem 0.5rem !important;
+        padding: 0.2rem 0.5rem !important; /* Padding v2.11 */
         line-height: 1.2 !important;
-        font-size: 1.1rem !important;
+        font-size: 1.1rem !important;       /* Dimensione icona v2.11 */
         border-radius: 0.25rem !important;
+        /* Rimuoviamo display flex, min-width, width auto - lasciamo default Streamlit */
     }
      button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled {
         cursor: not-allowed; opacity: 0.5;
      }
+     /* Rimuoviamo CSS specifico per l'allineamento in colonne */
      /* ---- FINE STILI BOTTONE ---- */
 
     .stApp { padding-top: 2rem; }
@@ -39,46 +41,41 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v2.14") # Version updated
+st.markdown("## 🚆 InfraTrack v2.15") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
-# --- GESTIONE RESET (Variabili definite prima del bottone) ---
+# --- GESTIONE RESET ---
+# Posizionato SOTTO il titolo
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 
-# --- CARICAMENTO FILE (Sezione spostata dopo il reset) ---
-st.markdown("---") # Linea divisoria
-
-# --- BOTTONE RESET (Spostato qui) ---
-if st.button("🔄 Reset Completo", key="reset_button", help="Resetta l'analisi e permette di caricare un nuovo file", disabled=not st.session_state.file_processed_success):
+# Bottone solo Icona
+if st.button("🔄", key="reset_button", help="Resetta l'analisi", disabled=not st.session_state.file_processed_success):
     st.session_state.widget_key_counter += 1
     st.session_state.file_processed_success = False
     if 'uploaded_file_state' in st.session_state: del st.session_state['uploaded_file_state']
     st.rerun()
 
-st.markdown("#### 1. Carica la Baseline di Riferimento") # Titolo sezione caricamento
+# --- CARICAMENTO FILE ---
+# ... (Il resto del codice rimane invariato rispetto alla v2.14) ...
+st.markdown("---")
+st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
 uploaded_file = st.file_uploader(
     "Seleziona il file .XML esportato da MS Project", type=["xml"],
     label_visibility="collapsed", key=uploader_key
 )
 
-# --- Messaggio di Successo Caricamento ---
-# Mostra messaggio DOPO il widget uploader se il processo è completo
 if st.session_state.file_processed_success and 'uploaded_file_state' in st.session_state :
      st.success('File XML analizzato con successo!')
 
-# --- Mantenimento stato file caricato ---
 if uploaded_file is not None: st.session_state['uploaded_file_state'] = uploaded_file
 elif 'uploaded_file_state' in st.session_state: uploaded_file = st.session_state['uploaded_file_state']
 
-
-# --- INIZIO ANALISI ---
 if uploaded_file is not None:
     if not st.session_state.file_processed_success:
         with st.spinner('Caricamento e analisi del file in corso...'):
             try:
-                # ... (Logica parsing XML e estrazione dati omessa per brevità, è la stessa v2.13) ...
                 uploaded_file.seek(0); file_content_bytes = uploaded_file.read()
                 parser = etree.XMLParser(recover=True); tree = etree.fromstring(file_content_bytes, parser=parser)
                 ns = {'msp': 'http://schemas.microsoft.com/project'}
