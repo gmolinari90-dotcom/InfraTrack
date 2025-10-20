@@ -7,49 +7,38 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v2.15", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v2.16", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
-# Stili CSS identici a v2.11/v2.12
+# Styles identical to v2.15
 st.markdown("""
 <style>
-    /* ... (Stili generali omessi per brevità) ... */
+    /* ... (CSS omesso per brevità) ... */
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button {
         font-size: 0.85rem !important;
     }
      .stApp h2 { font-size: 1.5rem !important; }
      .stApp .stMarkdown h4 { font-size: 1.1rem !important; margin-bottom: 0.5rem; margin-top: 1rem; }
      .stApp .stMarkdown h5 { font-size: 0.90rem !important; margin-bottom: 0.5rem; margin-top: 0.8rem; }
-
-    /* ---- STILI BOTTONE RESET ---- */
     button[data-testid="stButton"][kind="primary"][key="reset_button"] {
-        padding: 0.2rem 0.5rem !important; /* Padding v2.11 */
-        line-height: 1.2 !important;
-        font-size: 1.1rem !important;       /* Dimensione icona v2.11 */
+        padding: 0.2rem 0.5rem !important; line-height: 1.2 !important; font-size: 1.1rem !important;
         border-radius: 0.25rem !important;
-        /* Rimuoviamo display flex, min-width, width auto - lasciamo default Streamlit */
     }
      button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled {
         cursor: not-allowed; opacity: 0.5;
      }
-     /* Rimuoviamo CSS specifico per l'allineamento in colonne */
-     /* ---- FINE STILI BOTTONE ---- */
-
     .stApp { padding-top: 2rem; }
     .stDataFrame td { text-align: center !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v2.15") # Version updated
+st.markdown("## 🚆 InfraTrack v2.16") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
-# Posizionato SOTTO il titolo
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
-
-# Bottone solo Icona
 if st.button("🔄", key="reset_button", help="Resetta l'analisi", disabled=not st.session_state.file_processed_success):
     st.session_state.widget_key_counter += 1
     st.session_state.file_processed_success = False
@@ -57,7 +46,6 @@ if st.button("🔄", key="reset_button", help="Resetta l'analisi", disabled=not 
     st.rerun()
 
 # --- CARICAMENTO FILE ---
-# ... (Il resto del codice rimane invariato rispetto alla v2.14) ...
 st.markdown("---")
 st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
@@ -136,6 +124,7 @@ if uploaded_file is not None:
                 st.session_state.file_processed_success = True
                 st.rerun()
 
+            # --- Gestione Errori ---
             except etree.XMLSyntaxError as e:
                  st.error(f"Errore Sintassi XML: {e}"); st.error("File malformato?"); st.session_state.file_processed_success = False
                  try: uploaded_file.seek(0); st.code('\n'.join(uploaded_file.read(1000).decode('utf-8', errors='ignore').splitlines()[:20]), language='xml')
@@ -143,15 +132,20 @@ if uploaded_file is not None:
             except Exception as e:
                 st.error(f"Errore Analisi: {e}"); st.error("Verifica file XML."); st.session_state.file_processed_success = False
 
+    # --- VISUALIZZAZIONE DATI ---
     if st.session_state.file_processed_success:
         st.markdown("---")
         st.markdown("#### 2. Analisi Preliminare")
-        st.markdown("##### 📄 Informazioni Generali del Progetto")
+        # --- MODIFICA TITOLO SOTTOSEZIONE ---
+        st.markdown("##### 📄 Informazioni Generali dell'Appalto") # Testo modificato
         project_name = st.session_state.get('project_name', "N/D")
         formatted_cost = st.session_state.get('formatted_cost', "N/D")
         col1_disp, col2_disp = st.columns(2)
-        with col1_disp: st.markdown(f"**Nome Appalto:** {project_name}")
-        with col2_disp: st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
+        with col1_disp:
+            # --- MODIFICA LABEL ---
+            st.markdown(f"**Nome:** {project_name}") # Testo modificato
+        with col2_disp:
+            st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
 
         st.markdown("##### 🗓️ Termini Utili Contrattuali (TUP/TUF)")
         df_display = st.session_state.get('df_milestones_display')
