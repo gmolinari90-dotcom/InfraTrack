@@ -7,7 +7,7 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v2.5", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v2.6", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -20,32 +20,28 @@ st.markdown("""
         font-size: 1.5rem !important;
      }
      .stApp .stMarkdown h4 {
-         font-size: 1.1rem !important;
-         margin-bottom: 0.5rem;
-         margin-top: 1rem;
+         font-size: 1.1rem !important; margin-bottom: 0.5rem; margin-top: 1rem;
      }
      .stApp .stMarkdown h5 {
-         font-size: 0.90rem !important;
-         margin-bottom: 0.5rem;
-         margin-top: 0.8rem;
+         font-size: 0.90rem !important; margin-bottom: 0.5rem; margin-top: 0.8rem;
      }
     /* ---- MODIFICHE BOTTONE RESET ---- */
-    /* Torniamo al selettore precedente e regoliamo padding/font-size */
+    /* Aumentiamo leggermente il padding per contenere l'icona più grande */
     button[data-testid="stButton"][kind="primary"][key="reset_button"] {
-        padding: 0.15rem 0.4rem !important; /* Aumentato leggermente il padding per contenere icona */
-        line-height: 1 !important;
-        font-size: 1.1rem !important; /* Icona leggermente più grande */
+        padding: 0.2rem 0.5rem !important; /* Aumentato padding rispetto a v2.5 */
+        line-height: 1 !important;         /* Mantenuto basso per centrare */
+        font-size: 1.1rem !important;       /* Dimensione icona */
         min-width: auto !important;
-        width: auto !important; /* Lascia che si adatti ma non forzare fit-content */
+        width: auto !important;
         display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
+        align-items: center !important;     /* Centratura verticale */
+        justify-content: center !important; /* Centratura orizzontale */
         border-radius: 0.25rem !important;
     }
      button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled {
         cursor: not-allowed; opacity: 0.5;
      }
-    /* Allinea verticalmente titolo e bottone nelle colonne */
+    /* Allinea verticalmente titolo e bottone */
     div[data-testid="stHorizontalBlock"] > div[style*="flex-direction: row"] {
         display: flex; align-items: center;
     }
@@ -57,18 +53,16 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- TITOLO E HEADER CON BOTTONE RESET A DESTRA ---
-# Ripristiniamo il layout precedente delle colonne
 col_title, col_reset = st.columns([0.95, 0.05], vertical_alignment="center")
 
 with col_title:
-    st.markdown("## 🚆 InfraTrack v2.5") # Version updated
+    st.markdown("## 🚆 InfraTrack v2.6") # Version updated
     st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 
-# Bottone Reset nella colonna destra
 with col_reset:
     if st.button("🔄", key="reset_button", help="Reset Completo", disabled=not st.session_state.file_processed_success):
         st.session_state.widget_key_counter += 1
@@ -77,7 +71,7 @@ with col_reset:
         st.rerun()
 
 # --- CARICAMENTO FILE ---
-# ... (Il resto del codice rimane invariato rispetto alla v2.4) ...
+# ... (Il resto del codice rimane invariato rispetto alla v2.5) ...
 st.markdown("---")
 st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
@@ -114,7 +108,6 @@ if uploaded_file is not None:
                 all_tasks = tree.findall('.//msp:Task', namespaces=ns)
                 tup_tuf_pattern = re.compile(r'(?i)(TUP|TUF)\s*\d*')
                 def format_duration_from_xml(duration_str, work_hours_per_day=8.0):
-                    # ... (omessa) ...
                     if not duration_str or work_hours_per_day <= 0: return "0g"
                     try:
                         if duration_str.startswith('T'): duration_str = 'P' + duration_str
@@ -126,7 +119,6 @@ if uploaded_file is not None:
                         return f"{round(work_days)}g"
                     except Exception: return "N/D"
                 for task in all_tasks:
-                    # ... (omessa) ...
                     task_name = task.findtext('msp:Name', namespaces=ns) or ""
                     match = tup_tuf_pattern.search(task_name)
                     if match:
