@@ -7,12 +7,12 @@ import isodate
 from io import BytesIO
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v2.2", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v2.3", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
 <style>
-    /* ... (Stili generali omessi per brevità) ... */
+    /* ... (CSS omesso per brevità) ... */
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button {
         font-size: 0.85rem !important;
     }
@@ -20,89 +20,63 @@ st.markdown("""
         font-size: 1.5rem !important;
      }
      .stApp .stMarkdown h4 {
-         font-size: 0.95rem !important;
-         margin-bottom: 0.5rem;
-         margin-top: 1rem;
+         font-size: 0.95rem !important; margin-bottom: 0.5rem; margin-top: 1rem;
      }
      .stApp .stMarkdown h5 {
-         font-size: 0.90rem !important;
-         margin-bottom: 0.5rem;
-         margin-top: 0.8rem;
+         font-size: 0.90rem !important; margin-bottom: 0.5rem; margin-top: 0.8rem;
      }
-    /* ---- MODIFICHE BOTTONE RESET ---- */
-    /* Selettore più specifico e proprietà aggiuntive */
-    div[data-testid="stButton"] button[kind="primary"][key="reset_button"] {
-        padding: 0.05rem 0.15rem !important; /* Padding minimo per non schiacciare l'icona */
-        line-height: 1 !important;
-        font-size: 1.0rem !important;
-        min-width: fit-content !important; /* Forza la larghezza minima */
-        width: fit-content !important;     /* Forza la larghezza massima */
-        display: inline-flex !important;   /* Migliora allineamento interno */
-        align-items: center !important;
-        justify-content: center !important;
-        border-radius: 0.25rem !important; /* Riduci raggio bordi */
+    /* Stili Bottone Reset */
+    button[data-testid="stButton"][kind="primary"][key="reset_button"] {
+        padding: 0.05rem 0.15rem !important; line-height: 1 !important; font-size: 1.0rem !important;
+        min-width: fit-content !important; width: fit-content !important; display: inline-flex !important;
+        align-items: center !important; justify-content: center !important; border-radius: 0.25rem !important;
     }
-     /* Stile per bottone reset disabilitato */
-     div[data-testid="stButton"] button[kind="primary"][key="reset_button"]:disabled {
-        cursor: not-allowed;
-        opacity: 0.5;
+     button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled {
+        cursor: not-allowed; opacity: 0.5;
      }
-    /* Allinea verticalmente titolo e bottone reset nelle colonne */
+    /* Allinea verticalmente titolo e bottone */
     div[data-testid="stHorizontalBlock"] > div[style*="flex-direction: row"] {
-        display: flex;
-        align-items: center; /* Allinea verticalmente */
+        display: flex; align-items: center;
     }
-     /* ---- FINE MODIFICHE BOTTONE ---- */
-
-    .stApp {
-        padding-top: 2rem;
-    }
-    .stDataFrame td {
-        text-align: center !important;
-    }
+    .stApp { padding-top: 2rem; }
+    .stDataFrame td { text-align: center !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # --- TITOLO E HEADER CON BOTTONE RESET ALLINEATO ---
-col_title, col_reset = st.columns([0.95, 0.05])
+# --- MODIFICA: Ridotta larghezza colonna bottone ---
+col_title, col_reset = st.columns([0.97, 0.03], vertical_alignment="center") # Ratio modificato (era 0.95, 0.05)
 
 with col_title:
-    st.markdown("## 🚆 InfraTrack v2.2") # Version updated
+    st.markdown("## 🚆 InfraTrack v2.3") # Version updated
     st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
-if 'widget_key_counter' not in st.session_state:
-    st.session_state.widget_key_counter = 0
-if 'file_processed_success' not in st.session_state:
-    st.session_state.file_processed_success = False
+if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
+if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 
 with col_reset:
     if st.button("🔄", key="reset_button", help="Reset Completo", disabled=not st.session_state.file_processed_success):
         st.session_state.widget_key_counter += 1
         st.session_state.file_processed_success = False
-        if 'uploaded_file_state' in st.session_state:
-            del st.session_state['uploaded_file_state']
+        if 'uploaded_file_state' in st.session_state: del st.session_state['uploaded_file_state']
         st.rerun()
 
 # --- CARICAMENTO FILE ---
-# ... (Il resto del codice rimane invariato rispetto alla v2.1) ...
+# ... (Il resto del codice rimane invariato rispetto alla v2.2) ...
 st.markdown("---")
 st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
 uploaded_file = st.file_uploader(
-    "Seleziona il file .XML esportato da MS Project",
-    type=["xml"],
-    label_visibility="collapsed",
-    key=uploader_key
+    "Seleziona il file .XML esportato da MS Project", type=["xml"],
+    label_visibility="collapsed", key=uploader_key
 )
 
 if st.session_state.file_processed_success and 'uploaded_file_state' in st.session_state :
      st.success('File XML analizzato con successo!')
 
-if uploaded_file is not None:
-    st.session_state['uploaded_file_state'] = uploaded_file
-elif 'uploaded_file_state' in st.session_state:
-     uploaded_file = st.session_state['uploaded_file_state']
+if uploaded_file is not None: st.session_state['uploaded_file_state'] = uploaded_file
+elif 'uploaded_file_state' in st.session_state: uploaded_file = st.session_state['uploaded_file_state']
 
 if uploaded_file is not None:
     if not st.session_state.file_processed_success:
