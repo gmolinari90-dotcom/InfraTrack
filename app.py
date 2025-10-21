@@ -1,4 +1,4 @@
-# --- v17.13 (Gestione Errore Kaleido, Warning Locale Discreto) ---
+# --- v17.14 (Forza Tema Colori Plotly per Export Immagine) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -11,43 +11,32 @@ import plotly.graph_objects as go
 import traceback
 import os
 import locale
-# Import per export immagine (gestiremo ImportError)
 try:
     import plotly.io as pio
     from openpyxl.drawing.image import Image
     _kaleido_installed = True
 except ImportError:
-    _kaleido_installed = False # Flag per sapere se kaleido c'è
+    _kaleido_installed = False
 import openpyxl.utils
 
 # --- Imposta Locale Italiano ---
-_locale_warning_shown = False # Flag per mostrare warning solo una volta
-try:
-    locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
+# ... (Codice invariato v17.13) ...
+_locale_warning_shown = False
+try: locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
 except locale.Error:
     try: locale.setlocale(locale.LC_TIME, 'italian')
     except locale.Error:
-        try:
-            # Fallback estremo al default di sistema
-            locale.setlocale(locale.LC_TIME, '')
+        try: locale.setlocale(locale.LC_TIME, '')
         except locale.Error:
              if not _locale_warning_shown:
                 st.warning("Impossibile impostare qualsiasi locale per i nomi dei mesi. Le date potrebbero apparire in inglese.")
                 _locale_warning_shown = True
-        # Warning discreto se solo il fallback primario fallisce
-        # else:
-        #     if not _locale_warning_shown:
-        #         print("Locale 'it_IT.UTF-8' o 'italian' non trovato. Usando il default di sistema per i nomi dei mesi.")
-        #         # Potremmo mostrare un toast o loggare invece di st.warning per meno rumore
-        #         # st.toast("Locale italiano non trovato, usando default.", icon="⚠️")
-        #         _locale_warning_shown = True
-
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v17.13", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v17.14", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
-# ... (CSS invariato da v17.12) ...
+# ... (CSS invariato v17.12) ...
 st.markdown("""
 <style>
      .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button { font-size: 0.85rem !important; }
@@ -70,7 +59,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v17.13") # Version updated
+st.markdown("## 🚆 InfraTrack v17.14") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -305,7 +294,7 @@ if current_file_to_process is not None:
                     df_milestones['DataInizioObj'] = pd.to_datetime(df_milestones['DataInizioObj'], errors='coerce').dt.date
                     df_milestones['DataInizioObj'] = df_milestones['DataInizioObj'].fillna(min_date_for_sort)
                     df_milestones = df_milestones.sort_values(by="DataInizioObj").reset_index(drop=True)
-                    st.session_state['df_milestones_display'] = df_milestones[['Nome Completo', 'Durata', 'Data Inizio', 'Data Fine']] # Ordine corretto
+                    st.session_state['df_milestones_display'] = df_milestones[['Nome Completo', 'Durata', 'Data Inizio', 'Data Fine']]
                 else: st.session_state['df_milestones_display'] = None
                 st.session_state['all_tasks_data'] = pd.DataFrame(all_tasks_data_list)
                 current_file_to_process.seek(0); debug_content_bytes = current_file_to_process.read(2000);
@@ -340,8 +329,8 @@ if current_file_to_process is not None:
             excel_data = output.getvalue(); st.download_button(label="Scarica TUP/TUF (Excel)", data=excel_data, file_name="termini_utili_TUP_TUF.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_tup")
         else: st.warning("Nessun Termine Utile (TUP o TUF) trovato nel file.")
 
-
         # --- Sezione 3: Selezione Periodo e Analisi ---
+        # ... (Codice invariato fino al bottone Analisi) ...
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
         if not default_start: default_start = date.today()
@@ -454,15 +443,13 @@ if current_file_to_process is not None:
                             if aggregation_level == 'Mensile':
                                 cols_to_select_excel = ['Date', 'Value', 'Costo Cumulato (€)']
                                 rename_map_excel = {'Date': 'Mese', 'Value': 'Costo Mensile (€)'}
-                                df_export['Date'] = df_export['Date'].dt.strftime(date_format_excel).str.capitalize() # Usa formato MMM-YY
+                                df_export['Date'] = df_export['Date'].dt.strftime(date_format_excel).str.capitalize()
                             else: # Giornaliera
                                 cols_to_select_excel = ['Date', 'Value', 'Costo Cumulato (€)', col_summary_name]
                                 rename_map_excel = {'Date': 'Giorno', 'Value': 'Costo Giornaliero (€)', col_summary_name: 'Riepilogo WBS'}
-                                df_export['Date'] = df_export['Date'].dt.strftime(date_format_excel) # Usa formato DD/MM/YYYY
-
+                                df_export['Date'] = df_export['Date'].dt.strftime(date_format_excel)
                             df_to_write = df_export[cols_to_select_excel]
                             df_to_write = df_to_write.rename(columns=rename_map_excel)
-
                             with pd.ExcelWriter(output_sil, engine='openpyxl') as writer:
                                 df_to_write.to_excel(writer, index=False, sheet_name='Tabella')
                                 worksheet_table = writer.sheets['Tabella']
@@ -472,23 +459,16 @@ if current_file_to_process is not None:
                                         max_len = max((series.astype(str).map(len).max(), len(str(series.name)))) + 3
                                         worksheet_table.column_dimensions[openpyxl.utils.get_column_letter(idx + 1)].width = max_len
                                     except Exception as col_width_err: print(f"Errore aggiustamento colonna {col}: {col_width_err}")
-
-                                # --- [MODIFICATO v17.13] Gestione Errore Kaleido ---
-                                if _kaleido_installed: # Prova a esportare solo se kaleido è importabile
+                                if _kaleido_installed:
                                     try:
                                         img_bytes = pio.to_image(fig_sil, format="png", width=900, height=500, scale=1.5)
                                         img = Image(BytesIO(img_bytes))
                                         worksheet_chart = writer.book.create_sheet(title='Grafico')
                                         worksheet_chart.add_image(img, 'A1')
-                                    except Exception as img_err:
-                                        st.warning(f"Impossibile esportare il grafico in Excel (errore Kaleido/Plotly): {img_err}")
-                                else:
-                                    st.warning("Pacchetto 'kaleido' non trovato. Impossibile esportare il grafico in Excel. Aggiungilo a requirements.txt e reinstalla.")
-                                # --- FINE MODIFICA KALEIDO ---
-
+                                    except Exception as img_err: st.warning(f"Impossibile esportare il grafico in Excel (errore Kaleido/Plotly): {img_err}")
+                                else: st.warning("Pacchetto 'kaleido' non trovato. Impossibile esportare il grafico in Excel. Aggiungilo a requirements.txt e reinstalla.")
                             excel_data_sil = output_sil.getvalue()
                             st.download_button(label=f"Scarica Dati SIL ({aggregation_level})", data=excel_data_sil, file_name=f"dati_sil_{aggregation_level.lower()}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_sil")
-
 
                             # --- DEBUG ---
                             # ... (Debug invariato) ...
