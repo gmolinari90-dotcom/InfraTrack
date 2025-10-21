@@ -1,4 +1,4 @@
-# --- v17.9 (Correzione Titolo Grafico, Logica Reset/Cache) ---
+# --- v17.10 (Ordine Colonne TUP/TUF, Formato Data MMM-YY, Export Excel Tab+Grafico) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -10,9 +10,25 @@ import math
 import plotly.graph_objects as go
 import traceback
 import os
+import locale # Per formato data italiano
+import plotly.io as pio # Per esportare grafico Plotly
+from openpyxl.drawing.image import Image # Per inserire immagine in Excel
+import openpyxl.utils # Per aggiustare colonne Excel
+
+# --- Imposta Locale Italiano (per nomi mesi) ---
+try:
+    locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
+except locale.Error:
+    try:
+        # Fallback per sistemi Windows o altri encoding comuni
+        locale.setlocale(locale.LC_TIME, 'italian')
+    except locale.Error:
+        # Fallback estremo al default di sistema
+        locale.setlocale(locale.LC_TIME, '')
+        st.warning("Locale 'it_IT.UTF-8' non trovato. Usando il default di sistema per i nomi dei mesi.")
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v17.9", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v17.10", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -28,7 +44,10 @@ st.markdown("""
     button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled { cursor: not-allowed; opacity: 0.5; }
     .stApp { padding-top: 2rem; }
     .stDataFrame td { text-align: center !important; }
-    .stDataFrame th:nth-child(4), .stDataFrame td:nth-child(4) { text-align: left !important; }
+    .stDataFrame th:nth-child(4), .stDataFrame td:nth-child(4) { text-align: left !important; } /* Colonna Riepilogo WBS */
+    .stDataFrame th:nth-child(2), .stDataFrame td:nth-child(2) { /* 2a colonna TUP/TUF (Durata) */
+        text-align: center !important;
+    }
     div[data-testid="stDateInput"] label { font-size: 0.85rem !important; }
     div[data-testid="stDateInput"] input { font-size: 0.85rem !important; padding: 0.3rem 0.5rem !important;}
     .stCaptionContainer { font-size: 0.75rem !important; margin-top: -0.5rem; margin-bottom: 1rem;}
@@ -37,57 +56,38 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v17.9") # Version updated
+st.markdown("## 🚆 InfraTrack v17.10") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
+# ... (Codice invariato v17.9) ...
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 col_btn_1, col_btn_2, col_btn_3 = st.columns([0.1, 0.2, 0.7])
-
 with col_btn_1:
-    # --- [MODIFICATO v17.9] Reset più robusto ---
     if st.button("🔄", key="reset_button", help="Resetta l'analisi (Svuota Sessione e File)", disabled=not st.session_state.file_processed_success):
-        # Incrementa il contatore per cambiare la key del file_uploader
-        st.session_state.widget_key_counter += 1
-        st.session_state.file_processed_success = False # Resetta flag successo
-
-        # Cancella esplicitamente lo stato del file caricato
-        if 'uploaded_file_state' in st.session_state:
-            del st.session_state['uploaded_file_state']
-
-        # Cancella tutti gli altri dati di sessione (tranne quelli interni di Streamlit)
+        st.session_state.widget_key_counter += 1; st.session_state.file_processed_success = False
+        if 'uploaded_file_state' in st.session_state: del st.session_state['uploaded_file_state']
         keys_to_reset = list(st.session_state.keys())
         for key in keys_to_reset:
-            if not key.startswith("_") and key != 'widget_key_counter': # Non cancellare il contatore!
-                del st.session_state[key]
-
-        st.toast("Sessione resettata.", icon="🔄")
-        st.rerun() # Forza il rerun per applicare le modifiche (necessario per reset)
-
+            if not key.startswith("_") and key != 'widget_key_counter': del st.session_state[key]
+        st.toast("Sessione resettata.", icon="🔄"); st.rerun()
 with col_btn_2:
-    # --- [MODIFICATO v17.9] Rimosso st.rerun() ---
     if st.button("🗑️ Svuota Cache", key="clear_cache_button", help="Elimina i dati temporanei calcolati (Forza ri-analisi @st.cache_data)"):
-        st.cache_data.clear()
-        st.toast("Cache dei dati svuotata! I dati verranno ricalcolati alla prossima analisi.", icon="✅")
-        # NON chiamare st.rerun() qui, lascia che Streamlit gestisca l'aggiornamento
+        st.cache_data.clear(); st.toast("Cache dei dati svuotata! I dati verranno ricalcolati alla prossima analisi.", icon="✅")
 
 # --- CARICAMENTO FILE ---
+# ... (Codice invariato v17.9) ...
 st.markdown("---"); st.markdown("#### 1. Carica la Baseline di Riferimento")
-# La key dipende da widget_key_counter, che viene incrementato dal reset
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
 uploaded_file = st.file_uploader("Seleziona il file .XML...", type=["xml"], label_visibility="collapsed", key=uploader_key)
-
-# Logica per gestire il caricamento e lo stato (invariata)
 if st.session_state.get('file_processed_success', False) and 'uploaded_file_state' in st.session_state : st.success('File XML analizzato con successo!')
 if uploaded_file is not None and uploaded_file != st.session_state.get('uploaded_file_state'):
-    st.session_state['uploaded_file_state'] = uploaded_file
-    st.session_state.file_processed_success = False # Forza ri-analisi se il file cambia
-elif 'uploaded_file_state' not in st.session_state: # Se lo stato è stato cancellato (dal reset)
-    uploaded_file = None # Assicura che anche la variabile locale sia None
+    st.session_state['uploaded_file_state'] = uploaded_file; st.session_state.file_processed_success = False
+elif 'uploaded_file_state' not in st.session_state: uploaded_file = None
 
 # --- FUNZIONI HELPER ---
-# ... (Funzioni get_minutes_per_day, format_duration_from_xml, calculate_daily_distribution_bottom_up, get_relevant_summary_name invariate da v17.7) ...
+# ... (get_minutes_per_day, format_duration_from_xml invariate) ...
 @st.cache_data
 def get_minutes_per_day(_tree, _ns):
     minutes_per_day = 480
@@ -122,6 +122,7 @@ def format_duration_from_xml(duration_str):
 
 @st.cache_data
 def calculate_daily_distribution_bottom_up(_tasks_dataframe):
+    # ... (Funzione invariata v17.7 - Calcola dataframe giornaliero dettagliato con WBS) ...
     daily_cost_data = []
     tasks_df = _tasks_dataframe.copy()
     tasks_df['Start'] = pd.to_datetime(tasks_df['Start'], errors='coerce').dt.date
@@ -172,6 +173,7 @@ def calculate_daily_distribution_bottom_up(_tasks_dataframe):
     return daily_dataframe
 
 def get_relevant_summary_name(wbs_list, wbs_map):
+    # ... (Funzione invariata v17.7) ...
     if not wbs_list: return "N/D"
     unique_wbs_list = sorted(list(set(wbs_list)))
     if len(unique_wbs_list) == 1:
@@ -210,8 +212,7 @@ def get_relevant_summary_name(wbs_list, wbs_map):
 # --- INIZIO ANALISI ---
 current_file_to_process = st.session_state.get('uploaded_file_state')
 if current_file_to_process is not None:
-    # Esegui l'analisi solo se il file è caricato E non è stato ancora processato con successo
-    # O se il file caricato è cambiato
+    # --- Analisi del file (invariata da v17.7) ---
     if not st.session_state.get('file_processed_success', False) or current_file_to_process != st.session_state.get('last_processed_file'):
         with st.spinner('Caricamento e analisi completa del file in corso...'):
              try:
@@ -279,7 +280,6 @@ if current_file_to_process is not None:
                             if existing_duration_seconds == 0: potential_milestones[tup_tuf_key] = current_task_data
                             elif duration_seconds > existing_duration_seconds: potential_milestones[tup_tuf_key] = current_task_data
                 st.session_state['wbs_name_map'] = wbs_name_map
-                # ... (Salvataggio TUP/TUF e all_tasks invariato) ...
                 final_milestones_data = []
                 for key in potential_milestones:
                     data = potential_milestones[key]
@@ -292,26 +292,24 @@ if current_file_to_process is not None:
                     df_milestones['DataInizioObj'] = pd.to_datetime(df_milestones['DataInizioObj'], errors='coerce').dt.date
                     df_milestones['DataInizioObj'] = df_milestones['DataInizioObj'].fillna(min_date_for_sort)
                     df_milestones = df_milestones.sort_values(by="DataInizioObj").reset_index(drop=True)
-                    st.session_state['df_milestones_display'] = df_milestones.drop(columns=['DataInizioObj'])
+                    # --- [MODIFICATO v17.10] Ordine colonne TUP/TUF ---
+                    st.session_state['df_milestones_display'] = df_milestones[['Nome Completo', 'Durata', 'Data Inizio', 'Data Fine']]
                 else: st.session_state['df_milestones_display'] = None
                 st.session_state['all_tasks_data'] = pd.DataFrame(all_tasks_data_list)
                 current_file_to_process.seek(0); debug_content_bytes = current_file_to_process.read(2000);
                 try: st.session_state['debug_raw_text'] = '\n'.join(debug_content_bytes.decode('utf-8', errors='ignore').splitlines()[:50])
                 except Exception as decode_err: st.session_state['debug_raw_text'] = f"Errore decodifica debug: {decode_err}"
-
-                st.session_state['last_processed_file'] = current_file_to_process # Salva riferimento al file processato
+                st.session_state['last_processed_file'] = current_file_to_process
                 st.session_state.file_processed_success = True
-                # Non fare st.rerun() qui, lascia che Streamlit aggiorni dopo lo spinner
              except Exception as e:
                 print(f"Errore Analisi: {e}"); print(traceback.format_exc())
                 st.error(f"Errore Analisi durante elaborazione iniziale: {e}");
                 st.error(f"Traceback: {traceback.format_exc()}");
                 st.error("Verifica file XML.");
                 st.session_state.file_processed_success = False;
-                st.session_state['last_processed_file'] = None # Resetta riferimento file fallito
+                st.session_state['last_processed_file'] = None
 
     # --- VISUALIZZAZIONE DATI E ANALISI AVANZATA ---
-    # Questa parte viene eseguita ad ogni interazione SE il file è stato processato con successo
     if st.session_state.get('file_processed_success', False):
 
         # --- Sezione 2 (Invariata) ---
@@ -322,7 +320,7 @@ if current_file_to_process is not None:
         with col1_disp: st.markdown(f"**Nome:** {project_name}")
         with col2_disp: st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
         st.markdown("##### 🗓️ Termini Utili Contrattuali (TUP/TUF)")
-        df_display = st.session_state.get('df_milestones_display')
+        df_display = st.session_state.get('df_milestones_display') # Ora ha le colonne nell'ordine giusto
         if df_display is not None and not df_display.empty:
             st.dataframe(df_display, use_container_width=True, hide_index=True)
             output = BytesIO()
@@ -366,7 +364,8 @@ if current_file_to_process is not None:
                  st.error("Errore: Mappa WBS->Nome non trovata. Ricaricare il file.")
             else:
                 try:
-                    st.markdown(f"###### Analisi Curva S") # Titolo aggiornato
+                    scurve_source = "Stima Aggregata (WBS Bottom-Up)"
+                    st.markdown(f"###### Analisi Curva S")
 
                     with st.spinner(f"Calcolo distribuzione costi..."):
                         detailed_daily_cost_df = calculate_daily_distribution_bottom_up(all_tasks_dataframe.copy())
@@ -389,10 +388,12 @@ if current_file_to_process is not None:
                             plot_custom_data = None
                             col_summary_name = "Riepilogo WBS"
 
+                            # --- [MODIFICATO v17.10] Formato data MMM-YY ---
                             if aggregation_level == 'Mensile':
                                 aggregated_values = filtered_cost.set_index('Date')['Value'].resample('ME').sum().reset_index()
                                 aggregated_data = aggregated_values
-                                aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime('%Y-%m')
+                                # Usa strftime con locale per MMM-YY
+                                aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime('%b-%y').str.capitalize()
                                 axis_title = "Mese"
                                 col_name = "Costo Mensile (€)"
                                 display_columns = ['Periodo', col_name, 'Costo Cumulato (€)']
@@ -405,15 +406,17 @@ if current_file_to_process is not None:
                                     lambda wbs_list: get_relevant_summary_name(wbs_list, wbs_name_map)
                                 )
                                 aggregated_data = aggregated_daily
-                                aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime('%Y-%m-%d')
+                                # Usa strftime con locale per DD-MMM-YY
+                                aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime('%d-%b-%y').str.capitalize()
                                 axis_title = "Giorno"
-                                col_name = "Costo Giornaliero (€)" # <<< Corretto qui
+                                col_name = "Costo Giornaliero (€)"
                                 display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', col_summary_name]
                                 plot_custom_data = aggregated_data[col_summary_name]
+                            # --- FINE MODIFICA FORMATO DATA ---
 
                             aggregated_data['Costo Cumulato (€)'] = aggregated_data['Value'].cumsum()
 
-                            # --- VISUALIZZAZIONE ---
+                            # --- VISUALIZZAZIONE (Invariata) ---
                             st.markdown(f"###### Tabella Dati SIL Aggregati ({aggregation_level})")
                             df_display_sil = aggregated_data.copy()
                             df_display_sil.rename(columns={'Value': col_name}, inplace=True)
@@ -423,48 +426,62 @@ if current_file_to_process is not None:
 
                             st.markdown(f"###### Grafico Curva S ({aggregation_level})")
                             fig_sil = go.Figure()
-
-                            # --- [MODIFICATO v17.9] Correzione typo titolo grafico ---
                             hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {aggregation_level}</b>: %{{y:,.2f}}€<extra></extra>'
                             hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<extra></extra>'
                             if aggregation_level == 'Giornaliera':
-                                hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {col_name}</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>' # Usa col_name corretto
+                                hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {col_name}</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>'
                                 hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>'
-
                             fig_sil.add_trace(go.Bar(x=aggregated_data['Periodo'], y=aggregated_data['Value'], name=f'Costo {aggregation_level}', customdata=plot_custom_data, hovertemplate=hovertemplate_bar))
                             fig_sil.add_trace(go.Scatter(x=aggregated_data['Periodo'], y=aggregated_data['Costo Cumulato (€)'], name=f'Costo Cumulato', mode='lines+markers', yaxis='y2', customdata=plot_custom_data, hovertemplate=hovertemplate_scatter))
-
-                            fig_sil.update_layout(
-                                title=f'Curva S - Costo {aggregation_level.replace("a", "o")} e Cumulato', # Titolo aggiornato e typo corretto
-                                xaxis_title=axis_title,
-                                yaxis=dict(title=f"Costo {aggregation_level.replace('a', 'o')} (€)"), # Typo corretto
-                                yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"),
-                                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
-                                hovermode="x unified"
-                            )
-                            # --- FINE MODIFICA ---
-
+                            fig_sil.update_layout(title=f'Curva S - Costo {aggregation_level.replace("a", "o")} e Cumulato', xaxis_title=axis_title, yaxis=dict(title=f"Costo {aggregation_level.replace('a', 'o')} (€)"), yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"), legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01), hovermode="x unified")
                             st.plotly_chart(fig_sil, use_container_width=True)
 
-                            # --- EXPORT EXCEL (Invariato da v17.4) ---
-                            # ... (Codice invariato) ...
+                            # --- [MODIFICATO v17.10] EXPORT EXCEL ---
                             output_sil = BytesIO()
-                            df_export = aggregated_data.copy()
-                            cols_to_select_excel = []
-                            rename_map_excel = {}
+                            df_export_orig = aggregated_data.copy() # Copia originale con Date object
+
                             excel_sheet_name = f'SIL_{aggregation_level}'
+
+                            # Prepara df per tabella Excel (con Periodo formattato)
+                            cols_to_select_table = []
+                            rename_map_table = {}
                             if aggregation_level == 'Mensile':
-                                cols_to_select_excel = ['Date', 'Value', 'Costo Cumulato (€)']
-                                rename_map_excel = {'Date': 'Mese', 'Value': 'Costo Mensile (€)'}
-                                df_export['Date'] = df_export['Date'].dt.strftime('%Y-%m')
+                                cols_to_select_table = ['Periodo', 'Value', 'Costo Cumulato (€)']
+                                rename_map_table = {'Periodo': 'Mese', 'Value': 'Costo Mensile (€)'}
                             else: # Giornaliera
-                                cols_to_select_excel = ['Date', 'Value', 'Costo Cumulato (€)', col_summary_name]
-                                rename_map_excel = {'Date': 'Giorno', 'Value': 'Costo Giornaliero (€)', col_summary_name: 'Riepilogo WBS'}
-                                df_export['Date'] = df_export['Date'].dt.strftime('%Y-%m-%d')
-                            df_to_write = df_export[cols_to_select_excel]
-                            df_to_write = df_to_write.rename(columns=rename_map_excel)
+                                cols_to_select_table = ['Periodo', 'Value', 'Costo Cumulato (€)', col_summary_name]
+                                rename_map_table = {'Periodo': 'Giorno', 'Value': 'Costo Giornaliero (€)', col_summary_name: 'Riepilogo WBS'}
+
+                            df_table_excel = df_export_orig[cols_to_select_table]
+                            df_table_excel = df_table_excel.rename(columns=rename_map_table)
+
                             with pd.ExcelWriter(output_sil, engine='openpyxl') as writer:
-                                df_to_write.to_excel(writer, index=False, sheet_name=excel_sheet_name)
+                                # 1. Scrivi Tabella
+                                df_table_excel.to_excel(writer, index=False, sheet_name='Tabella')
+                                worksheet_table = writer.sheets['Tabella']
+                                # Aggiusta larghezza colonne
+                                for idx, col in enumerate(df_table_excel):
+                                    try:
+                                        series = df_table_excel[col]
+                                        # Calcola max_len, gestendo valori None o non stringa
+                                        max_len = max((
+                                            series.astype(str).map(len).max(),
+                                            len(str(series.name))
+                                        )) + 3 # Più padding
+                                        worksheet_table.column_dimensions[openpyxl.utils.get_column_letter(idx + 1)].width = max_len
+                                    except Exception as col_width_err:
+                                        print(f"Errore aggiustamento colonna {col}: {col_width_err}") # Non bloccare per questo
+
+                                # 2. Scrivi Grafico
+                                try:
+                                    img_bytes = pio.to_image(fig_sil, format="png", width=900, height=500, scale=1.5) # Aumenta qualità
+                                    img = Image(BytesIO(img_bytes))
+                                    worksheet_chart = writer.book.create_sheet(title='Grafico')
+                                    worksheet_chart.add_image(img, 'A1')
+                                except Exception as img_err:
+                                    st.warning(f"Impossibile esportare il grafico in Excel: {img_err}")
+                            # --- FINE MODIFICA EXCEL ---
+
                             excel_data_sil = output_sil.getvalue()
                             st.download_button(label=f"Scarica Dati SIL ({aggregation_level})", data=excel_data_sil, file_name=f"dati_sil_{aggregation_level.lower()}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_sil")
 
