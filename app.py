@@ -1,4 +1,4 @@
-# --- v15.3 (Logica Fallback: Cerca Type 10, se fallisce Cerca Type 3) ---
+# --- v15.4 (Ricerca Timephased Globale - Task E Assignment) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -11,7 +11,7 @@ import plotly.graph_objects as go # Importa Graph Objects per grafici combinati
 import traceback # Per debug avanzato
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v15.3", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v15.4", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -43,7 +43,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v15.3") # Version updated
+st.markdown("## 🚆 InfraTrack v15.4") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -83,7 +83,8 @@ elif 'uploaded_file_state' not in st.session_state:
 # --- FUNZIONI HELPER (definite globalmente) ---
 @st.cache_data
 def get_minutes_per_day(_tree, _ns):
-    minutes_per_day = 480 # Default 8 ore
+    # ... (Funzione invariata) ...
+    minutes_per_day = 480 
     try:
         default_calendar = _tree.find(".//msp:Calendar[msp:UID='1']", namespaces=_ns)
         if default_calendar is not None:
@@ -104,6 +105,7 @@ def get_minutes_per_day(_tree, _ns):
     return minutes_per_day
 
 def format_duration_from_xml(duration_str):
+    # ... (Funzione invariata) ...
     minutes_per_day = st.session_state.get('minutes_per_day', 480)
     if not duration_str or minutes_per_day <= 0: return "0g"
     try:
@@ -114,45 +116,54 @@ def format_duration_from_xml(duration_str):
         work_days = total_hours / (minutes_per_day / 60.0); return f"{round(work_days)}g"
     except Exception: return "N/D"
 
-# --- [MODIFICATA] ESTRAZIONE DATI TIMEPHASED PER CURVA S ---
+# --- [MODIFICATA v15.4] ESTRAZIONE DATI TIMEPHASED PER CURVA S ---
 @st.cache_data
 def extract_timephased_cost(_xml_tree, _namespaces, cost_type_code):
     """
-    Estrae i dati di Costo distribuiti nel tempo (Timephased) dalle Assegnazioni (Assignments)
-    in base al 'cost_type_code' fornito.
-    - Type "10" = Costo Baseline (Baseline Cost)
-    - Type "3"  = Costo (Cost = Actual + Remaining)
+    Estrae i dati di Costo distribuiti nel tempo (Timephased) dall'INTERO albero XML.
+    Cerca in TUTTI i nodi (Task, Assignment, etc.)
+    
+    - Type "10" = Costo Baseline (Baseline Cost) -> Si trova dentro <Baseline>
+    - Type "3"  = Costo (Cost = Actual + Remaining) -> Si trova fuori da <Baseline>
     """
     daily_cost_data = []
-    assignments = _xml_tree.findall('.//msp:Assignment', namespaces=_namespaces)
     
-    # Costruisci l'XPath dinamicamente
-    xpath_baseline = f'.//msp:Baseline/msp:TimephasedData[msp:Type="{cost_type_code}"]'
-    xpath_non_baseline = f'./msp:TimephasedData[msp:Type="{cost_type_code}"]'
-    
-    for ass in assignments:
-        timephased_nodes = []
+    # Definisce l'XPath (percorso di ricerca)
+    target_xpath = ""
+    if cost_type_code == "10":
+        # Cerca Type "10" (Baseline Cost) ovunque sia in un nodo <Baseline>
+        target_xpath = ".//msp:Baseline/msp:TimephasedData[msp:Type='10']"
+    elif cost_type_code == "3":
+        # Cerca Type "3" (Cost) ovunque sia un figlio di <Task> o <Assignment>
+        # (L'XML di Project li mette lì, non in <Baseline>)
         
-        if cost_type_code == "10":
-            # I dati Baseline (10) sono dentro un nodo <Baseline>
-            timephased_nodes = ass.findall(xpath_baseline, namespaces=_namespaces)
-        else:
-            # I dati Costo (3) sono figli diretti di <Assignment>
-            timephased_nodes = ass.findall(xpath_non_baseline, namespaces=_namespaces)
+        # 1. Cerca in tutti i Task
+        nodes = _xml_tree.findall('.//msp:Task/msp:TimephasedData[msp:Type="3"]', namespaces=_namespaces)
+        # 2. Cerca in tutte le Assignment
+        nodes.extend(_xml_tree.findall('.//msp:Assignment/msp:TimephasedData[msp:Type="3"]', namespaces=_namespaces))
+    
+    else:
+        nodes = [] # Tipo non supportato
 
-        for node in timephased_nodes:
-            start_date_str = node.findtext('msp:Start', namespaces=_namespaces)
-            value_str = node.findtext('msp:Value', namespaces=_namespaces)
-            
-            if start_date_str and value_str:
-                try:
-                    current_date = datetime.fromisoformat(start_date_str).date()
-                    cost_value = float(value_str) / 100.0 # Costo in centesimi
-                    
-                    if cost_value > 0:
-                        daily_cost_data.append({'Date': current_date, 'Value': cost_value})
-                except Exception:
-                    pass # Ignora nodi malformati
+    # Se stiamo cercando la Baseline (10), eseguiamo la ricerca globale
+    if cost_type_code == "10":
+        nodes = _xml_tree.findall(target_xpath, namespaces=_namespaces)
+
+    # st.toast(f"Trovati {len(nodes)} nodi per Type={cost_type_code}") # (Utile per debug)
+
+    for node in nodes:
+        start_date_str = node.findtext('msp:Start', namespaces=_namespaces)
+        value_str = node.findtext('msp:Value', namespaces=_namespaces)
+        
+        if start_date_str and value_str:
+            try:
+                current_date = datetime.fromisoformat(start_date_str).date()
+                cost_value = float(value_str) / 100.0 # Costo in centesimi
+                
+                if cost_value > 0:
+                    daily_cost_data.append({'Date': current_date, 'Value': cost_value})
+            except Exception:
+                pass # Ignora nodi malformati
 
     if not daily_cost_data:
         return pd.DataFrame(columns=['Date', 'Value'])
@@ -203,6 +214,7 @@ if current_file_to_process is not None:
                 tup_tuf_pattern = re.compile(r'(?i)(TUP|TUF)\s*\d*'); all_tasks_data_list = []
 
                 for task in all_tasks:
+                    # ... (Loop TUP/TUF e Task invariato) ...
                     uid = task.findtext('msp:UID', namespaces=ns); name = task.findtext('msp:Name', namespaces=ns) or "";
                     start_str = task.findtext('msp:Start', namespaces=ns); finish_str = task.findtext('msp:Finish', namespaces=ns);
                     start_date = datetime.fromisoformat(start_str).date() if start_str else None; finish_date = datetime.fromisoformat(finish_str).date() if finish_str else None
@@ -212,10 +224,8 @@ if current_file_to_process is not None:
                     is_milestone_text = (task.findtext('msp:Milestone', namespaces=ns) or '0').lower(); is_milestone = is_milestone_text == '1' or is_milestone_text == 'true'
                     wbs = task.findtext('msp:WBS', namespaces=ns) or ""
                     total_slack_minutes_str = task.findtext('msp:TotalSlack', namespaces=ns) or "0"
-                    
                     is_summary_str = task.findtext('msp:Summary', namespaces=ns) or '0'
                     is_summary = is_summary_str == '1'
-                    
                     total_slack_days = 0
                     if total_slack_minutes_str:
                         try:
@@ -223,12 +233,9 @@ if current_file_to_process is not None:
                             mpd = st.session_state.get('minutes_per_day', 480)
                             if mpd > 0: total_slack_days = math.ceil(slack_minutes / mpd)
                         except ValueError: total_slack_days = 0
-
                     if uid != '0':
                         all_tasks_data_list.append({"UID": uid, "Name": name, "Start": start_date, "Finish": finish_date, "Duration": duration_formatted, "Cost": cost_euros, 
                                                     "Milestone": is_milestone, "Summary": is_summary, "WBS": wbs, "TotalSlackDays": total_slack_days})
-
-                    # Logica TUP/TUF (invariata)
                     match = tup_tuf_pattern.search(name)
                     if match:
                         tup_tuf_key = match.group(0).upper().strip(); duration_str_tup = task.findtext('msp:Duration', namespaces=ns)
@@ -270,11 +277,11 @@ if current_file_to_process is not None:
                 # Salvataggio TUTTE le attività (invariato)
                 st.session_state['all_tasks_data'] = pd.DataFrame(all_tasks_data_list)
                 
-                # --- [MODIFICATO] CALCOLO DATI CURVA S (con Fallback) ---
+                # --- CALCOLO DATI CURVA S (Logica Fallback invariata, ma funzione corretta) ---
                 
                 # 1. Tenta di estrarre il Costo Baseline (Type 10)
                 scurve_data = extract_timephased_cost(tree, ns, cost_type_code="10")
-                scurve_source = "Baseline (Type 10)" # Fonte dati
+                scurve_source = "Baseline (Type 10)" 
                 
                 # 2. Se fallisce, tenta di estrarre il Costo Totale (Type 3)
                 if scurve_data.empty:
@@ -284,9 +291,9 @@ if current_file_to_process is not None:
                 else:
                     st.session_state['fallback_warning'] = None
                 
-                # 3. Salva i dati trovati (o un DF vuoto se fallisce anche il fallback)
+                # 3. Salva i dati trovati
                 st.session_state['scurve_data'] = scurve_data
-                st.session_state['scurve_source'] = scurve_source # Salva la fonte
+                st.session_state['scurve_source'] = scurve_source 
                 st.session_state['debug_timephased_total_cost'] = scurve_data['Value'].sum() if not scurve_data.empty else 0
                 
                 
@@ -310,7 +317,6 @@ if current_file_to_process is not None:
     # --- VISUALIZZAZIONE DATI E ANALISI AVANZATA ---
     if st.session_state.get('file_processed_success', False):
     
-        # Mostra l'avviso di fallback se esiste
         fallback_warning = st.session_state.get('fallback_warning')
         if fallback_warning:
             st.warning(fallback_warning)
@@ -349,16 +355,14 @@ if current_file_to_process is not None:
         
         if st.button("📈 Avvia Analisi Curva S", key="analyze_scurve"):
             
-            # Recupera i dati (Baseline o Costo) e la fonte
             daily_cost_df = st.session_state.get('scurve_data')
-            scurve_source = st.session_state.get('scurve_source', 'N/D') # Es: "Baseline (Type 10)"
+            scurve_source = st.session_state.get('scurve_source', 'N/D') 
             
             if daily_cost_df is None or daily_cost_df.empty:
-                st.error("Errore: Nessun dato 'Timephased' trovato nel file XML.")
+                st.error("Errore: Nessun dato 'Timephased' (Type 10 o Type 3) trovato nel file XML.")
                 st.warning("Impossibile calcolare la Curva S. Assicurati che il progetto abbia costi assegnati (nella Baseline o nella colonna Costo).")
             else:
                 try:
-                    # Titolo dinamico basato sulla fonte dati
                     st.markdown(f"###### Curva S (Dati Timephased: {scurve_source})")
                     
                     with st.spinner(f"Aggregazione dati Curva S ({scurve_source})..."):
@@ -405,7 +409,7 @@ if current_file_to_process is not None:
                         debug_total = st.session_state.get('debug_timephased_total_cost', 0)
                         formatted_debug_cost = f"€ {debug_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
                         st.write(f"**Costo Totale Calcolato (somma dati {scurve_source}):** {formatted_debug_cost}")
-                        st.caption(f"Questo totale è la somma di tutti i costi '{scurve_source}' distribuiti nel tempo trovati nelle assegnazioni.")
+                        st.caption(f"Questo totale è la somma di tutti i costi '{scurve_source}' distribuiti nel tempo trovati nell'XML.")
 
                     else:
                         st.warning(f"Nessun dato di costo ({scurve_source}) trovato nel periodo selezionato.")
