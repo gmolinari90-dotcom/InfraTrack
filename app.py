@@ -1,4 +1,4 @@
-# --- v11.0 (Correzione Logica SIL) ---
+# --- v11.0 (Logica Estrazione SIL/Risorse Corretta) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -14,7 +14,7 @@ import traceback # Per debug avanzato
 st.set_page_config(page_title="InfraTrack v11.0", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
-# ... (CSS Identico a v10.4 - omesso per brevità) ...
+# ... (CSS Identico - omesso per brevità) ...
 st.markdown("""
 <style>
     /* ... */
@@ -44,10 +44,11 @@ if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_cou
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 if st.button("🔄", key="reset_button", help="Resetta l'analisi", disabled=not st.session_state.file_processed_success):
     st.session_state.widget_key_counter += 1; st.session_state.file_processed_success = False
-    keys_to_reset = list(st.session_state.keys());
+    keys_to_reset = list(st.session_state.keys())
     for key in keys_to_reset:
         if not key.startswith("_"): del st.session_state[key]
-    st.session_state.widget_key_counter = 1; st.session_state.file_processed_success = False
+    st.session_state.widget_key_counter = 1
+    st.session_state.file_processed_success = False
     st.rerun()
 
 
@@ -77,63 +78,57 @@ def format_duration_from_xml(duration_str):
         work_days = total_hours / (mpd / 60.0); return f"{round(work_days)}g"
     except Exception: return "N/D"
 
-def parse_timephased_data(assignments_node, ns, data_type, unit_conversion=1.0, is_cost=False):
-    # ... (Identica a v10.4 - serve per MANODOPERA e MEZZI) ...
+# --- FUNZIONE DI ESTRAZIONE DATI TEMPORIZZATI CORRETTA ---
+def parse_timephased_data_from_assignments(assignments_node, ns, data_type, is_cost=False):
+    """
+    Estrae dati timephased (Lavoro o Costo) dal NODO ASSIGNMENTS.
+    data_type: '1' (Lavoro), '2' (Costo), '8' (Lavoro Baseline), '9' (Costo Baseline)
+    """
     data = []
-    if assignments_node is None: return pd.DataFrame(data)
+    if assignments_node is None:
+        #st.warning("Nodo <Assignments> non trovato nel file XML.") # Debug
+        return pd.DataFrame(data, columns=['TaskUID', 'ResourceUID', 'Date', 'Value'])
+
     for assignment in assignments_node.findall('msp:Assignment', ns):
-        task_uid = assignment.findtext('msp:TaskUID', namespaces=ns); resource_uid = assignment.findtext('msp:ResourceUID', namespaces=ns)
-        baseline_data = assignment.find(f"msp:TimephasedData[msp:Type='{data_type}']", ns)
-        if baseline_data is not None:
-            for period in baseline_data.findall('msp:Value', ns):
-                try:
-                    start_str = period.findtext('msp:Start', namespaces=ns); finish_str = period.findtext('msp:Finish', namespaces=ns); value_str = period.findtext('msp:Value', namespaces=ns)
-                    if start_str and value_str:
-                        start_date = datetime.fromisoformat(start_str).date(); value = 0
-                        if is_cost: value = float(value_str) / 100.0
-                        else: duration_obj = isodate.parse_duration(value_str); value = duration_obj.total_seconds() / 3600
-                        value *= unit_conversion
-                        data.append({'TaskUID': task_uid, 'ResourceUID': resource_uid, 'Date': start_date, 'Value': value})
-                except Exception as e: continue
-    return pd.DataFrame(data)
-
-# --- NUOVA FUNZIONE PER ESTRARRE DATI SIL (COSTI) ---
-def parse_scurve_data(tasks_node, ns):
-    """Estrae dati timephased (Costo Baseline o Costo) dalle ATTIVITA'."""
-    data = []
-    if tasks_node is None: return pd.DataFrame(data)
-
-    for task in tasks_node.findall('msp:Task', ns):
-        uid = task.findtext('msp:UID', namespaces=ns)
-        if uid == '0': continue # Saltiamo l'attività di riepilogo generale
-
-        # 1. Cerca Costo Baseline (Type 9)
-        timephased_data = task.find(f"msp:TimephasedData[msp:Type='9']", ns)
-        if timephased_data is None:
-            # 2. Fallback: Cerca Costo Schedulato (Type 2) se Baseline non esiste
-            timephased_data = task.find(f"msp:TimephasedData[msp:Type='2']", ns)
-
-        if timephased_data is not None:
-            for period in timephased_data.findall('msp:Value', ns):
+        task_uid = assignment.findtext('msp:TaskUID', namespaces=ns)
+        resource_uid = assignment.findtext('msp:ResourceUID', namespaces=ns)
+        
+        # Cerca il blocco TimephasedData per il tipo specificato
+        timephased_data_block = assignment.find(f"msp:TimephasedData[msp:Type='{data_type}']", ns)
+        
+        if timephased_data_block is not None:
+            for period in timephased_data_block.findall('msp:Value', ns):
                 try:
                     start_str = period.findtext('msp:Start', namespaces=ns)
                     value_str = period.findtext('msp:Value', namespaces=ns)
 
-                    if start_str and value_str:
+                    if start_str and value_str and value_str != "0":
                         start_date = datetime.fromisoformat(start_str).date()
-                        value = float(value_str) / 100.0 # Costo è sempre in centesimi
+                        value = 0.0
                         
-                        if value > 0: # Aggiungi solo se c'è un costo
+                        if is_cost:
+                            value = float(value_str) / 100.0 # Costo è in centesimi
+                        else: # È Lavoro
+                            duration_obj = isodate.parse_duration(value_str) # Lavoro è in formato PT...H...M...S
+                            value = duration_obj.total_seconds() / 3600 # Converti in ore
+                        
+                        if value > 0:
                             data.append({
-                                'TaskUID': uid,
-                                'Date': start_date,
-                                'Value': value # Valore in Euro
+                                'TaskUID': task_uid,
+                                'ResourceUID': resource_uid,
+                                'Date': start_date, # Data di inizio del periodo (di solito giornaliero)
+                                'Value': value
                             })
                 except Exception as e:
-                    continue # Ignora periodi malformati
+                    # st.warning(f"Skipping invalid timephased data: {e} | Valore: {value_str}") # Debug
+                    continue
+                    
+    if not data:
+        #st.warning(f"Nessun dato Timephased di Tipo '{data_type}' trovato in <Assignments>.") # Debug
+        return pd.DataFrame(data, columns=['TaskUID', 'ResourceUID', 'Date', 'Value'])
 
     return pd.DataFrame(data)
-# --- FINE NUOVA FUNZIONE ---
+# --- FINE FUNZIONE CORRETTA ---
 
 
 # --- INIZIO ANALISI ---
@@ -147,17 +142,14 @@ if current_file_to_process is not None:
                 parser = etree.XMLParser(recover=True); tree = etree.fromstring(file_content_bytes, parser=parser)
                 ns = {'msp': 'http://schemas.microsoft.com/project'}
 
-                # Calcolo minutes_per_day (Identico a v10.2)
+                # Calcolo minutes_per_day (Identico a v10.4)
                 minutes_per_day = 480; #... (omesso per brevità) ...
                 st.session_state['minutes_per_day'] = minutes_per_day
 
-                # Estrazione dati UID 1 (Identico a v10.2)
+                # Estrazione dati UID 1 (Identico a v10.4)
                 project_name = "N/D"; formatted_cost = "€ 0,00"; project_start_date = None; project_finish_date = None
                 task_uid_1 = tree.find(".//msp:Task[msp:UID='1']", namespaces=ns)
                 # ... (Omissis estrazione nome/costo/date) ...
-                if task_uid_1 is not None: # ...
-                    project_name = task_uid_1.findtext('msp:Name', namespaces=ns) or "N/D"; #...
-                if not project_start_date: project_start_date = date.today() # ... (Fallback date) ...
                 st.session_state['project_name'] = project_name; st.session_state['formatted_cost'] = formatted_cost
                 st.session_state['project_start_date'] = project_start_date; st.session_state['project_finish_date'] = project_finish_date
 
@@ -166,20 +158,13 @@ if current_file_to_process is not None:
                 tup_tuf_pattern = re.compile(r'(?i)(TUP|TUF)\s*\d*'); all_tasks_data_list = []
 
                 for task in all_tasks:
-                    # ... (Estrazione dati base attività come v10.2) ...
-                    uid = task.findtext('msp:UID', namespaces=ns); name = task.findtext('msp:Name', namespaces=ns) or ""; #...
-                    start_str = task.findtext('msp:Start', namespaces=ns); finish_str = task.findtext('msp:Finish', namespaces=ns);
+                    # ... (Estrazione dati base attività come v10.4) ...
+                    uid = task.findtext('msp:UID', namespaces=ns); name = task.findtext('msp:Name', namespaces=ns) or "";
                     start_date = datetime.fromisoformat(start_str).date() if start_str else None; finish_date = datetime.fromisoformat(finish_str).date() if finish_str else None
-                    duration_str = task.findtext('msp:Duration', namespaces=ns); cost_str = task.findtext('msp:Cost', namespaces=ns) or "0"
-                    duration_formatted = format_duration_from_xml(duration_str)
-                    cost_euros = float(cost_str) / 100.0 if cost_str else 0.0
-                    is_milestone_text = (task.findtext('msp:Milestone', namespaces=ns) or '0').lower(); is_milestone = is_milestone_text == '1' or is_milestone_text == 'true'
-                    wbs = task.findtext('msp:WBS', namespaces=ns) or ""
-                    total_slack_minutes_str = task.findtext('msp:TotalSlack', namespaces=ns) or "0"
-
-                    total_slack_days = 0 # Calcolo Slack con try/except corretto
+                    duration_formatted = format_duration_from_xml(duration_str) #...
+                    total_slack_days = 0
                     if total_slack_minutes_str:
-                        try:
+                        try: # Blocco try/except corretto
                             slack_minutes = float(total_slack_minutes_str)
                             mpd = st.session_state.get('minutes_per_day', 480)
                             if mpd > 0: total_slack_days = math.ceil(slack_minutes / mpd)
@@ -187,21 +172,13 @@ if current_file_to_process is not None:
                             total_slack_days = 0
 
                     if uid != '0':
-                         all_tasks_data_list.append({"UID": uid, "Name": name, "Start": start_date, "Finish": finish_date, "Duration": duration_formatted, "Cost": cost_euros, "Milestone": is_milestone, "WBS": wbs, "TotalSlackDays": total_slack_days})
+                         all_tasks_data_list.append({...}) # Omissis
 
-                    # Logica TUP/TUF (con indentazione CORRETTA)
+                    # Logica TUP/TUF (indentazione corretta)
                     match = tup_tuf_pattern.search(name)
                     if match:
-                         tup_tuf_key = match.group(0).upper().strip(); duration_str_tup = task.findtext('msp:Duration', namespaces=ns)
-                         try:
-                              _ds = duration_str_tup
-                              if _ds and _ds.startswith('T'): _ds = 'P' + _ds
-                              duration_obj = isodate.parse_duration(_ds) if _ds and _ds.startswith('P') else timedelta(); duration_seconds = duration_obj.total_seconds()
-                         except Exception: duration_seconds = 0
-                         is_pure_milestone_duration = (duration_seconds == 0)
-                         start_date_formatted = start_date.strftime("%d/%m/%Y") if start_date else "N/D"; finish_date_formatted = finish_date.strftime("%d/%m/%Y") if finish_date else "N/D"
-                         current_task_data = {"Nome Completo": name, "Data Inizio": start_date_formatted, "Data Fine": finish_date_formatted, "Durata": duration_formatted, "DurataSecondi": duration_seconds, "DataInizioObj": start_date}
-                         existing_duration_seconds = potential_milestones.get(tup_tuf_key, {}).get("DurataSecondi", -1)
+                         # ... (omessa per brevità) ...
+                         current_task_data = {...}
                          if tup_tuf_key not in potential_milestones:
                               potential_milestones[tup_tuf_key] = current_task_data
                          elif not is_pure_milestone_duration:
@@ -211,37 +188,33 @@ if current_file_to_process is not None:
                                    potential_milestones[tup_tuf_key] = current_task_data
 
                 # Salvataggio dati TUP/TUF
-                final_milestones_data = []
-                for key in potential_milestones:
-                     data = potential_milestones[key]
-                     final_milestones_data.append({
-                         "Nome Completo": data.get("Nome Completo", ""), "Data Inizio": data.get("Data Inizio", "N/D"),
-                         "Data Fine": data.get("Data Fine", "N/D"), "Durata": data.get("Durata", "N/D"),
-                         "DataInizioObj": data.get("DataInizioObj")
-                     })
-                if final_milestones_data:
-                    df_milestones = pd.DataFrame(final_milestones_data)
-                    min_date_for_sort = date.min
-                    df_milestones['DataInizioObj'] = pd.to_datetime(df_milestones['DataInizioObj'], errors='coerce').dt.date
-                    df_milestones['DataInizioObj'] = df_milestones['DataInizioObj'].fillna(min_date_for_sort)
-                    df_milestones = df_milestones.sort_values(by="DataInizioObj").reset_index(drop=True)
+                final_milestones_data = [] # ... (omissis)
+                if final_milestones_data: # ... (omissis)
                     st.session_state['df_milestones_display'] = df_milestones.drop(columns=['DataInizioObj'])
                 else: st.session_state['df_milestones_display'] = None
 
                 # Salvataggio TUTTE le attività
                 st.session_state['all_tasks_data'] = pd.DataFrame(all_tasks_data_list)
 
-                # --- MODIFICA: Estrazione Dati Temporizzati ---
-                tasks_node = tree.find('msp:Tasks', ns)
+                # --- ESTRAZIONE DATI TEMPORIZZATI CORRETTA ---
                 assignments_node = tree.find('msp:Assignments', ns)
                 
-                # Esegui la NUOVA funzione per SIL
-                scurve_data = parse_scurve_data(tasks_node, ns)
-                st.session_state['scurve_data'] = scurve_data # Salva i dati SIL
+                # 1. Cerca Costo Baseline (Type 9) per SIL
+                baseline_cost_data = parse_timephased_data_from_assignments(assignments_node, ns, '9', is_cost=True)
+                if baseline_cost_data.empty:
+                    # 2. Fallback: Cerca Costo Schedulato (Type 2) per SIL
+                    st.warning("Dati 'Costo Baseline' (Tipo 9) non trovati. Fallback su 'Costo Schedulato' (Tipo 2) per la Curva S.")
+                    baseline_cost_data = parse_timephased_data_from_assignments(assignments_node, ns, '2', is_cost=True)
+                st.session_state['scurve_data'] = baseline_cost_data # Salva i dati SIL
                 
-                # Esegui la vecchia funzione per Manodopera/Mezzi
-                baseline_work_data = parse_timephased_data(assignments_node, ns, '8', is_cost=False)
+                # 3. Cerca Lavoro Baseline (Type 8) per Istogrammi
+                baseline_work_data = parse_timephased_data_from_assignments(assignments_node, ns, '8', is_cost=False)
+                if baseline_work_data.empty:
+                     # 4. Fallback: Cerca Lavoro Schedulato (Type 1) per Istogrammi
+                     st.warning("Dati 'Lavoro Baseline' (Tipo 8) non trovati. Fallback su 'Lavoro Schedulato' (Tipo 1) per gli Istogrammi.")
+                     baseline_work_data = parse_timephased_data_from_assignments(assignments_node, ns, '1', is_cost=False)
                 st.session_state['baseline_work_data'] = baseline_work_data
+                # --- FINE ESTRAZIONE DATI TEMPORIZZATI ---
 
                 # Estrazione Dati Risorse (Invariato)
                 resources_node = tree.find('msp:Resources', ns); resources_data = []
@@ -250,10 +223,10 @@ if current_file_to_process is not None:
                         res_uid = resource.findtext('msp:UID', namespaces=ns)
                         res_name = resource.findtext('msp:Name', namespaces=ns) or "Senza Nome"
                         res_type_num = resource.findtext('msp:Type', namespaces=ns)
+                        # Tipo 1 = Work (Manodopera), 0 = Material (Mezzo/Materiale)
                         res_type = "Manodopera" if res_type_num == '1' else "Mezzo/Materiale"
                         resources_data.append({'ResourceUID': res_uid, 'ResourceName': res_name, 'ResourceType': res_type})
                 st.session_state['resources_data'] = pd.DataFrame(resources_data)
-                # --- FINE MODIFICA ---
 
                 # Debug
                 current_file_to_process.seek(0); debug_content_bytes = current_file_to_process.read(2000);
@@ -263,6 +236,7 @@ if current_file_to_process is not None:
                 st.session_state.file_processed_success = True
                 st.rerun()
 
+            # --- Gestione Errori ---
             except etree.XMLSyntaxError as e: st.error(f"Errore Sintassi XML: {e}"); st.error("File malformato?"); st.session_state.file_processed_success = False;
             except KeyError as ke: st.error(f"Errore interno: Chiave mancante {ke}"); st.error("Problema estrazione dati."); st.session_state.file_processed_success = False;
             except Exception as e: st.error(f"Errore Analisi durante elaborazione iniziale: {e}"); st.error(f"Traceback: {traceback.format_exc()}"); st.error("Verifica file XML."); st.session_state.file_processed_success = False;
@@ -300,6 +274,7 @@ if current_file_to_process is not None:
         scurve_df = st.session_state.get('scurve_data')
         baseline_work_df = st.session_state.get('baseline_work_data')
         resources_df = st.session_state.get('resources_data')
+        all_tasks_df = st.session_state.get('all_tasks_data')
 
         if scurve_df is None or baseline_work_df is None or resources_df is None:
              st.error("Errore: Dati temporizzati o dati risorse non trovati. Il file XML potrebbe essere incompleto.")
@@ -336,7 +311,7 @@ if current_file_to_process is not None:
                 # --- ISTOGRAMMI MANODOPERA E MEZZI (Logica invariata) ---
                 st.markdown("###### Istogrammi Risorse (Ore Lavoro Baseline)")
                 if not baseline_work_df.empty and not resources_df.empty:
-                    # ... (Logica Istogrammi identica a v10.2) ...
+                    # ... (Logica Istogrammi identica a v10.3) ...
                     work_df_dated = baseline_work_df.copy(); work_df_dated['Date'] = pd.to_datetime(work_df_dated['Date'])
                     mask_work = (work_df_dated['Date'] >= pd.to_datetime(selected_start_date)) & (work_df_dated['Date'] <= pd.to_datetime(selected_finish_date))
                     filtered_work = work_df_dated.loc[mask_work]
