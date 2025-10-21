@@ -1,4 +1,4 @@
-# --- v13.2 (Base Stabile + Logica SIL Corretta + Fix Definitivi) ---
+# --- v13.3 (Logica SIL/Istogrammi Corretta + Fix Sintassi Definitivi) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import traceback
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v13.2", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v13.3", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -34,7 +34,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v13.2") # Version updated
+st.markdown("## 🚆 InfraTrack v13.3") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
@@ -69,7 +69,7 @@ def get_minutes_per_day(_tree, _ns):
     try:
         default_calendar = _tree.find(".//msp:Calendar[msp:UID='1']", namespaces=_ns)
         if default_calendar is not None:
-             working_day = default_calendar.find(".//msp:WeekDay[msp:DayType='1']", namespaces=_ns) # Tipo 1 = giorno lavorativo
+             working_day = default_calendar.find(".//msp:WeekDay[msp:DayType='1']", namespaces=_ns)
              if working_day is not None:
                   working_minutes = 0
                   for working_time in working_day.findall(".//msp:WorkingTime", namespaces=_ns):
@@ -96,7 +96,7 @@ def format_duration_from_xml(duration_str):
          work_days = total_hours / (mpd / 60.0); return f"{round(work_days)}g"
      except Exception: return "N/D"
 
-# --- FUNZIONE ESTRAZIONE DATI TEMPORIZZATI (Corretta) ---
+# --- FUNZIONE ESTRAZIONE DATI TEMPORIZZATI CORRETTA ---
 @st.cache_data
 def extract_timephased_data_from_assignments(_assignments_node, _ns, data_type, is_cost=False):
     """
@@ -197,20 +197,22 @@ if current_file_to_process is not None:
                     wbs = task.findtext('msp:WBS', namespaces=ns) or ""
                     total_slack_minutes_str = task.findtext('msp:TotalSlack', namespaces=ns) or "0"
                     
-                    total_slack_days = 0 # Calcolo Slack con try/except corretto
+                    # --- Calcolo Slack con try/except CORRETTO ---
+                    total_slack_days = 0
                     if total_slack_minutes_str:
-                        try:
+                        try: # Blocco try
                             slack_minutes = float(total_slack_minutes_str)
                             mpd = st.session_state.get('minutes_per_day', 480)
                             if mpd > 0:
                                 total_slack_days = math.ceil(slack_minutes / mpd)
-                        except ValueError:
+                        except ValueError: # Blocco except CORRETTAMENTE ALLINEATO
                             total_slack_days = 0
+                    # --- FINE CALCOLO SLACK ---
 
                     if uid != '0':
                          all_tasks_data_list.append({"UID": uid, "Name": name, "Start": start_date, "Finish": finish_date, "Duration": duration_formatted, "Cost": cost_euros, "Milestone": is_milestone, "WBS": wbs, "TotalSlackDays": total_slack_days})
 
-                    # Logica TUP/TUF (con indentazione CORRETTA)
+                    # --- Logica TUP/TUF con INDENTAZIONE CORRETTA ---
                     match = tup_tuf_pattern.search(name)
                     if match:
                          tup_tuf_key = match.group(0).upper().strip(); duration_str_tup = task.findtext('msp:Duration', namespaces=ns)
@@ -223,13 +225,16 @@ if current_file_to_process is not None:
                          start_date_formatted = start_date.strftime("%d/%m/%Y") if start_date else "N/D"; finish_date_formatted = finish_date.strftime("%d/%m/%Y") if finish_date else "N/D"
                          current_task_data = {"Nome Completo": name, "Data Inizio": start_date_formatted, "Data Fine": finish_date_formatted, "Durata": duration_formatted, "DurataSecondi": duration_seconds, "DataInizioObj": start_date}
                          existing_duration_seconds = potential_milestones.get(tup_tuf_key, {}).get("DurataSecondi", -1)
+                         
                          if tup_tuf_key not in potential_milestones:
                               potential_milestones[tup_tuf_key] = current_task_data
                          elif not is_pure_milestone_duration:
                               if existing_duration_seconds == 0:
                                    potential_milestones[tup_tuf_key] = current_task_data
                               elif duration_seconds > existing_duration_seconds:
+                                   # Indentazione CORRETTA
                                    potential_milestones[tup_tuf_key] = current_task_data
+                    # --- FINE LOGICA TUP/TUF ---
 
                 # Salvataggio dati TUP/TUF
                 final_milestones_data = []
@@ -310,7 +315,9 @@ if current_file_to_process is not None:
         st.markdown("##### 🗓️ Termini Utili Contrattuali (TUP/TUF)")
         df_display = st.session_state.get('df_milestones_display')
         if df_display is not None and not df_display.empty:
-            st.dataframe(df_display, use_container_width=True, hide_index=True)
+            # --- CORREZIONE ORDINE COLONNE ---
+            st.dataframe(df_display[["Nome Completo", "Durata", "Data Inizio", "Data Fine"]], use_container_width=True, hide_index=True)
+            # --- FINE CORREZIONE ---
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer: df_display.to_excel(writer, index=False, sheet_name='TerminiUtili')
             excel_data = output.getvalue(); st.download_button(label="Scarica (Excel)", data=excel_data, file_name="termini_utili_TUP_TUF.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
