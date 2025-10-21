@@ -1,4 +1,4 @@
-# --- v17.12 (Ordine Colonne TUP/TUF Corretto) ---
+# --- v17.13 (Gestione Errore Kaleido, Warning Locale Discreto) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -11,26 +11,45 @@ import plotly.graph_objects as go
 import traceback
 import os
 import locale
-import plotly.io as pio
-from openpyxl.drawing.image import Image
+# Import per export immagine (gestiremo ImportError)
+try:
+    import plotly.io as pio
+    from openpyxl.drawing.image import Image
+    _kaleido_installed = True
+except ImportError:
+    _kaleido_installed = False # Flag per sapere se kaleido c'è
 import openpyxl.utils
 
 # --- Imposta Locale Italiano ---
+_locale_warning_shown = False # Flag per mostrare warning solo una volta
 try:
     locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
 except locale.Error:
     try: locale.setlocale(locale.LC_TIME, 'italian')
     except locale.Error:
-        locale.setlocale(locale.LC_TIME, '')
-        st.warning("Locale 'it_IT.UTF-8' non trovato. Usando il default di sistema per i nomi dei mesi.")
+        try:
+            # Fallback estremo al default di sistema
+            locale.setlocale(locale.LC_TIME, '')
+        except locale.Error:
+             if not _locale_warning_shown:
+                st.warning("Impossibile impostare qualsiasi locale per i nomi dei mesi. Le date potrebbero apparire in inglese.")
+                _locale_warning_shown = True
+        # Warning discreto se solo il fallback primario fallisce
+        # else:
+        #     if not _locale_warning_shown:
+        #         print("Locale 'it_IT.UTF-8' o 'italian' non trovato. Usando il default di sistema per i nomi dei mesi.")
+        #         # Potremmo mostrare un toast o loggare invece di st.warning per meno rumore
+        #         # st.toast("Locale italiano non trovato, usando default.", icon="⚠️")
+        #         _locale_warning_shown = True
+
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v17.12", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v17.13", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
+# ... (CSS invariato da v17.12) ...
 st.markdown("""
 <style>
-    /* ... (CSS Identico - omesso per brevità) ... */
      .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button { font-size: 0.85rem !important; }
     .stApp h2 { font-size: 1.5rem !important; }
     .stApp .stMarkdown h4 { font-size: 1.1rem !important; margin-bottom: 0.5rem; margin-top: 1rem; }
@@ -41,9 +60,7 @@ st.markdown("""
     button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled { cursor: not-allowed; opacity: 0.5; }
     .stApp { padding-top: 2rem; }
     .stDataFrame td { text-align: center !important; }
-    /* Colonna Riepilogo WBS SIL */
     .stDataFrame th:nth-child(4), .stDataFrame td:nth-child(4) { text-align: left !important; }
-    /* Colonna Durata TUP/TUF */
     .stDataFrame th:nth-child(2), .stDataFrame td:nth-child(2) { text-align: center !important; }
     div[data-testid="stDateInput"] label { font-size: 0.85rem !important; }
     div[data-testid="stDateInput"] input { font-size: 0.85rem !important; padding: 0.3rem 0.5rem !important;}
@@ -53,7 +70,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v17.12") # Version updated
+st.markdown("## 🚆 InfraTrack v17.13") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -72,6 +89,7 @@ with col_btn_1:
 with col_btn_2:
     if st.button("🗑️ Svuota Cache", key="clear_cache_button", help="Elimina i dati temporanei calcolati (Forza ri-analisi @st.cache_data)"):
         st.cache_data.clear(); st.toast("Cache dei dati svuotata! I dati verranno ricalcolati alla prossima analisi.", icon="✅")
+
 
 # --- CARICAMENTO FILE ---
 # ... (Codice invariato v17.9) ...
@@ -287,8 +305,7 @@ if current_file_to_process is not None:
                     df_milestones['DataInizioObj'] = pd.to_datetime(df_milestones['DataInizioObj'], errors='coerce').dt.date
                     df_milestones['DataInizioObj'] = df_milestones['DataInizioObj'].fillna(min_date_for_sort)
                     df_milestones = df_milestones.sort_values(by="DataInizioObj").reset_index(drop=True)
-                    # --- [CORRETTO v17.12] Ordine colonne TUP/TUF ---
-                    st.session_state['df_milestones_display'] = df_milestones[['Nome Completo', 'Durata', 'Data Inizio', 'Data Fine']]
+                    st.session_state['df_milestones_display'] = df_milestones[['Nome Completo', 'Durata', 'Data Inizio', 'Data Fine']] # Ordine corretto
                 else: st.session_state['df_milestones_display'] = None
                 st.session_state['all_tasks_data'] = pd.DataFrame(all_tasks_data_list)
                 current_file_to_process.seek(0); debug_content_bytes = current_file_to_process.read(2000);
@@ -307,14 +324,15 @@ if current_file_to_process is not None:
     # --- VISUALIZZAZIONE DATI E ANALISI AVANZATA ---
     if st.session_state.get('file_processed_success', False):
 
-        # --- Sezione 2 ---
+        # --- Sezione 2 (Invariata) ---
+        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 2. Analisi Preliminare"); st.markdown("##### 📄 Informazioni Generali dell'Appalto")
         project_name = st.session_state.get('project_name', "N/D"); formatted_cost = st.session_state.get('formatted_cost', "N/D")
         col1_disp, col2_disp = st.columns(2);
         with col1_disp: st.markdown(f"**Nome:** {project_name}")
         with col2_disp: st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
         st.markdown("##### 🗓️ Termini Utili Contrattuali (TUP/TUF)")
-        df_display = st.session_state.get('df_milestones_display') # Ora ha le colonne nell'ordine giusto
+        df_display = st.session_state.get('df_milestones_display')
         if df_display is not None and not df_display.empty:
             st.dataframe(df_display, use_container_width=True, hide_index=True)
             output = BytesIO()
@@ -380,17 +398,15 @@ if current_file_to_process is not None:
                             display_columns = []
                             plot_custom_data = None
                             col_summary_name = "Riepilogo WBS"
-                            date_format_display = "" # Per display tabella/grafico
-                            date_format_excel = "" # Per export excel
+                            date_format_display = ""
+                            date_format_excel = ""
 
                             if aggregation_level == 'Mensile':
                                 aggregated_values = filtered_cost.set_index('Date')['Value'].resample('ME').sum().reset_index()
                                 aggregated_data = aggregated_values
-                                date_format_display = '%b-%y' # Es. Lug-23
-                                date_format_excel = '%b-%y' # Stesso formato per Excel
+                                date_format_display = '%b-%y'; date_format_excel = '%b-%y'
                                 aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime(date_format_display).str.capitalize()
-                                axis_title = "Mese"
-                                col_name = "Costo Mensile (€)"
+                                axis_title = "Mese"; col_name = "Costo Mensile (€)"
                                 display_columns = ['Periodo', col_name, 'Costo Cumulato (€)']
                             else: # 'Giornaliera'
                                 aggregated_daily = filtered_cost.groupby('Date').agg(
@@ -401,11 +417,9 @@ if current_file_to_process is not None:
                                     lambda wbs_list: get_relevant_summary_name(wbs_list, wbs_name_map)
                                 )
                                 aggregated_data = aggregated_daily
-                                date_format_display = '%d/%m/%Y' # Es. 31/07/2023
-                                date_format_excel = '%d/%m/%Y' # Stesso formato per Excel
+                                date_format_display = '%d/%m/%Y'; date_format_excel = '%d/%m/%Y'
                                 aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime(date_format_display)
-                                axis_title = "Giorno"
-                                col_name = "Costo Giornaliero (€)"
+                                axis_title = "Giorno"; col_name = "Costo Giornaliero (€)"
                                 display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', col_summary_name]
                                 plot_custom_data = aggregated_data[col_summary_name]
 
@@ -440,13 +454,11 @@ if current_file_to_process is not None:
                             if aggregation_level == 'Mensile':
                                 cols_to_select_excel = ['Date', 'Value', 'Costo Cumulato (€)']
                                 rename_map_excel = {'Date': 'Mese', 'Value': 'Costo Mensile (€)'}
-                                # Usa formato MMM-YY per Excel
-                                df_export['Date'] = df_export['Date'].dt.strftime(date_format_excel).str.capitalize()
+                                df_export['Date'] = df_export['Date'].dt.strftime(date_format_excel).str.capitalize() # Usa formato MMM-YY
                             else: # Giornaliera
                                 cols_to_select_excel = ['Date', 'Value', 'Costo Cumulato (€)', col_summary_name]
                                 rename_map_excel = {'Date': 'Giorno', 'Value': 'Costo Giornaliero (€)', col_summary_name: 'Riepilogo WBS'}
-                                # Usa formato DD/MM/YYYY per Excel
-                                df_export['Date'] = df_export['Date'].dt.strftime(date_format_excel)
+                                df_export['Date'] = df_export['Date'].dt.strftime(date_format_excel) # Usa formato DD/MM/YYYY
 
                             df_to_write = df_export[cols_to_select_excel]
                             df_to_write = df_to_write.rename(columns=rename_map_excel)
@@ -460,12 +472,19 @@ if current_file_to_process is not None:
                                         max_len = max((series.astype(str).map(len).max(), len(str(series.name)))) + 3
                                         worksheet_table.column_dimensions[openpyxl.utils.get_column_letter(idx + 1)].width = max_len
                                     except Exception as col_width_err: print(f"Errore aggiustamento colonna {col}: {col_width_err}")
-                                try:
-                                    img_bytes = pio.to_image(fig_sil, format="png", width=900, height=500, scale=1.5)
-                                    img = Image(BytesIO(img_bytes))
-                                    worksheet_chart = writer.book.create_sheet(title='Grafico')
-                                    worksheet_chart.add_image(img, 'A1')
-                                except Exception as img_err: st.warning(f"Impossibile esportare il grafico in Excel: {img_err}")
+
+                                # --- [MODIFICATO v17.13] Gestione Errore Kaleido ---
+                                if _kaleido_installed: # Prova a esportare solo se kaleido è importabile
+                                    try:
+                                        img_bytes = pio.to_image(fig_sil, format="png", width=900, height=500, scale=1.5)
+                                        img = Image(BytesIO(img_bytes))
+                                        worksheet_chart = writer.book.create_sheet(title='Grafico')
+                                        worksheet_chart.add_image(img, 'A1')
+                                    except Exception as img_err:
+                                        st.warning(f"Impossibile esportare il grafico in Excel (errore Kaleido/Plotly): {img_err}")
+                                else:
+                                    st.warning("Pacchetto 'kaleido' non trovato. Impossibile esportare il grafico in Excel. Aggiungilo a requirements.txt e reinstalla.")
+                                # --- FINE MODIFICA KALEIDO ---
 
                             excel_data_sil = output_sil.getvalue()
                             st.download_button(label=f"Scarica Dati SIL ({aggregation_level})", data=excel_data_sil, file_name=f"dati_sil_{aggregation_level.lower()}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_sil")
