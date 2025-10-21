@@ -1,4 +1,4 @@
-# --- v17.11 (Formato Data DD/MM/YYYY e MMM-YY, Ordine Colonne TUP/TUF) ---
+# --- v17.12 (Ordine Colonne TUP/TUF Corretto) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -25,12 +25,12 @@ except locale.Error:
         st.warning("Locale 'it_IT.UTF-8' non trovato. Usando il default di sistema per i nomi dei mesi.")
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v17.11", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v17.12", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
-# ... (CSS invariato da v17.10) ...
 st.markdown("""
 <style>
+    /* ... (CSS Identico - omesso per brevità) ... */
      .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button { font-size: 0.85rem !important; }
     .stApp h2 { font-size: 1.5rem !important; }
     .stApp .stMarkdown h4 { font-size: 1.1rem !important; margin-bottom: 0.5rem; margin-top: 1rem; }
@@ -41,8 +41,10 @@ st.markdown("""
     button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled { cursor: not-allowed; opacity: 0.5; }
     .stApp { padding-top: 2rem; }
     .stDataFrame td { text-align: center !important; }
-    .stDataFrame th:nth-child(4), .stDataFrame td:nth-child(4) { text-align: left !important; } /* Colonna Riepilogo WBS */
-    .stDataFrame th:nth-child(2), .stDataFrame td:nth-child(2) { text-align: center !important; } /* Durata TUP/TUF */
+    /* Colonna Riepilogo WBS SIL */
+    .stDataFrame th:nth-child(4), .stDataFrame td:nth-child(4) { text-align: left !important; }
+    /* Colonna Durata TUP/TUF */
+    .stDataFrame th:nth-child(2), .stDataFrame td:nth-child(2) { text-align: center !important; }
     div[data-testid="stDateInput"] label { font-size: 0.85rem !important; }
     div[data-testid="stDateInput"] input { font-size: 0.85rem !important; padding: 0.3rem 0.5rem !important;}
     .stCaptionContainer { font-size: 0.75rem !important; margin-top: -0.5rem; margin-bottom: 1rem;}
@@ -51,7 +53,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v17.11") # Version updated
+st.markdown("## 🚆 InfraTrack v17.12") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -208,6 +210,7 @@ if current_file_to_process is not None:
     if not st.session_state.get('file_processed_success', False) or current_file_to_process != st.session_state.get('last_processed_file'):
         with st.spinner('Caricamento e analisi completa del file in corso...'):
              try:
+                # ... (Parsing XML, estrazione dati task, popolamento wbs_name_map invariato) ...
                 current_file_to_process.seek(0); file_content_bytes = current_file_to_process.read()
                 parser = etree.XMLParser(recover=True); tree = etree.fromstring(file_content_bytes, parser=parser)
                 ns = {'msp': 'http://schemas.microsoft.com/project'}
@@ -263,7 +266,6 @@ if current_file_to_process is not None:
                             duration_obj = isodate.parse_duration(_ds) if _ds and _ds.startswith('P') else timedelta(); duration_seconds = duration_obj.total_seconds()
                         except Exception: duration_seconds = 0
                         is_pure_milestone_duration = (duration_seconds == 0)
-                        # Formato data DD/MM/YYYY per TUP/TUF
                         start_date_formatted = start_date.strftime("%d/%m/%Y") if start_date else "N/D"
                         finish_date_formatted = finish_date.strftime("%d/%m/%Y") if finish_date else "N/D"
                         current_task_data = {"Nome Completo": name, "Data Inizio": start_date_formatted, "Data Fine": finish_date_formatted, "Durata": duration_formatted, "DurataSecondi": duration_seconds, "DataInizioObj": start_date}
@@ -285,7 +287,7 @@ if current_file_to_process is not None:
                     df_milestones['DataInizioObj'] = pd.to_datetime(df_milestones['DataInizioObj'], errors='coerce').dt.date
                     df_milestones['DataInizioObj'] = df_milestones['DataInizioObj'].fillna(min_date_for_sort)
                     df_milestones = df_milestones.sort_values(by="DataInizioObj").reset_index(drop=True)
-                    # --- Ordine colonne TUP/TUF corretto ---
+                    # --- [CORRETTO v17.12] Ordine colonne TUP/TUF ---
                     st.session_state['df_milestones_display'] = df_milestones[['Nome Completo', 'Durata', 'Data Inizio', 'Data Fine']]
                 else: st.session_state['df_milestones_display'] = None
                 st.session_state['all_tasks_data'] = pd.DataFrame(all_tasks_data_list)
@@ -305,8 +307,7 @@ if current_file_to_process is not None:
     # --- VISUALIZZAZIONE DATI E ANALISI AVANZATA ---
     if st.session_state.get('file_processed_success', False):
 
-        # --- Sezione 2 (Invariata) ---
-        # ... (Codice invariato) ...
+        # --- Sezione 2 ---
         st.markdown("---"); st.markdown("#### 2. Analisi Preliminare"); st.markdown("##### 📄 Informazioni Generali dell'Appalto")
         project_name = st.session_state.get('project_name', "N/D"); formatted_cost = st.session_state.get('formatted_cost', "N/D")
         col1_disp, col2_disp = st.columns(2);
@@ -318,7 +319,7 @@ if current_file_to_process is not None:
             st.dataframe(df_display, use_container_width=True, hide_index=True)
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer: df_display.to_excel(writer, index=False, sheet_name='TerminiUtili')
-            excel_data = output.getvalue(); st.download_button(label="Scarica (Excel)", data=excel_data, file_name="termini_utili_TUP_TUF.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            excel_data = output.getvalue(); st.download_button(label="Scarica TUP/TUF (Excel)", data=excel_data, file_name="termini_utili_TUP_TUF.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_tup")
         else: st.warning("Nessun Termine Utile (TUP o TUF) trovato nel file.")
 
 
@@ -357,7 +358,6 @@ if current_file_to_process is not None:
                  st.error("Errore: Mappa WBS->Nome non trovata. Ricaricare il file.")
             else:
                 try:
-                    scurve_source = "Stima Aggregata (WBS Bottom-Up)" # Manteniamo per debug
                     st.markdown(f"###### Analisi Curva S")
 
                     with st.spinner(f"Calcolo distribuzione costi..."):
@@ -380,15 +380,14 @@ if current_file_to_process is not None:
                             display_columns = []
                             plot_custom_data = None
                             col_summary_name = "Riepilogo WBS"
-                            date_format_display = "" # Per display
-                            date_format_excel = "" # Per excel
+                            date_format_display = "" # Per display tabella/grafico
+                            date_format_excel = "" # Per export excel
 
-                            # --- [MODIFICATO v17.11] Formato data corretto ---
                             if aggregation_level == 'Mensile':
                                 aggregated_values = filtered_cost.set_index('Date')['Value'].resample('ME').sum().reset_index()
                                 aggregated_data = aggregated_values
                                 date_format_display = '%b-%y' # Es. Lug-23
-                                date_format_excel = '%Y-%m' # Per coerenza con versioni precedenti
+                                date_format_excel = '%b-%y' # Stesso formato per Excel
                                 aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime(date_format_display).str.capitalize()
                                 axis_title = "Mese"
                                 col_name = "Costo Mensile (€)"
@@ -403,13 +402,12 @@ if current_file_to_process is not None:
                                 )
                                 aggregated_data = aggregated_daily
                                 date_format_display = '%d/%m/%Y' # Es. 31/07/2023
-                                date_format_excel = '%Y-%m-%d' # Standard ISO per Excel
+                                date_format_excel = '%d/%m/%Y' # Stesso formato per Excel
                                 aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime(date_format_display)
                                 axis_title = "Giorno"
                                 col_name = "Costo Giornaliero (€)"
                                 display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', col_summary_name]
                                 plot_custom_data = aggregated_data[col_summary_name]
-                            # --- FINE MODIFICA FORMATO DATA ---
 
                             aggregated_data['Costo Cumulato (€)'] = aggregated_data['Value'].cumsum()
 
@@ -423,13 +421,11 @@ if current_file_to_process is not None:
 
                             st.markdown(f"###### Grafico Curva S ({aggregation_level})")
                             fig_sil = go.Figure()
-
                             hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {aggregation_level}</b>: %{{y:,.2f}}€<extra></extra>'
                             hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<extra></extra>'
                             if aggregation_level == 'Giornaliera':
                                 hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {col_name}</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>'
                                 hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>'
-
                             fig_sil.add_trace(go.Bar(x=aggregated_data['Periodo'], y=aggregated_data['Value'], name=f'Costo {aggregation_level}', customdata=plot_custom_data, hovertemplate=hovertemplate_bar))
                             fig_sil.add_trace(go.Scatter(x=aggregated_data['Periodo'], y=aggregated_data['Costo Cumulato (€)'], name=f'Costo Cumulato', mode='lines+markers', yaxis='y2', customdata=plot_custom_data, hovertemplate=hovertemplate_scatter))
                             fig_sil.update_layout(title=f'Curva S - Costo {aggregation_level.replace("a", "o")} e Cumulato', xaxis_title=axis_title, yaxis=dict(title=f"Costo {aggregation_level.replace('a', 'o')} (€)"), yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"), legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01), hovermode="x unified")
@@ -444,13 +440,13 @@ if current_file_to_process is not None:
                             if aggregation_level == 'Mensile':
                                 cols_to_select_excel = ['Date', 'Value', 'Costo Cumulato (€)']
                                 rename_map_excel = {'Date': 'Mese', 'Value': 'Costo Mensile (€)'}
-                                # Applica formato MMM-YY per Excel
-                                df_export['Date'] = df_export['Date'].dt.strftime('%b-%y').str.capitalize()
+                                # Usa formato MMM-YY per Excel
+                                df_export['Date'] = df_export['Date'].dt.strftime(date_format_excel).str.capitalize()
                             else: # Giornaliera
                                 cols_to_select_excel = ['Date', 'Value', 'Costo Cumulato (€)', col_summary_name]
                                 rename_map_excel = {'Date': 'Giorno', 'Value': 'Costo Giornaliero (€)', col_summary_name: 'Riepilogo WBS'}
-                                # Applica formato DD/MM/YYYY per Excel
-                                df_export['Date'] = df_export['Date'].dt.strftime('%d/%m/%Y')
+                                # Usa formato DD/MM/YYYY per Excel
+                                df_export['Date'] = df_export['Date'].dt.strftime(date_format_excel)
 
                             df_to_write = df_export[cols_to_select_excel]
                             df_to_write = df_to_write.rename(columns=rename_map_excel)
