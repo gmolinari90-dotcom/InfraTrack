@@ -1,4 +1,4 @@
-# --- v17.0 (Logica Curva S: Stima Aggregata con Filtro WBS Gerarchico) ---
+# --- v17.1 (Aggiunto Selettore Aggregazione Giornaliera/Mensile) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -11,7 +11,7 @@ import plotly.graph_objects as go # Importa Graph Objects per grafici combinati
 import traceback # Per debug avanzato
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v17.0", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v17.1", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -43,7 +43,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v17.0") # Version updated
+st.markdown("## 🚆 InfraTrack v17.1") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -123,13 +123,12 @@ def get_parent_wbs(wbs_string):
         return None
     return wbs_string.rsplit('.', 1)[0]
     
-# --- FUNZIONE PER CALCOLARE SIL (Logica WBS Gerarchica) ---
+# --- FUNZIONE PER CALCOLARE SIL (Logica WBS Gerarchica v17.0) ---
 @st.cache_data
 def calculate_daily_distribution_wbs(_tasks_dataframe):
     """
     Calcola la distribuzione giornaliera dei costi (Stima Aggregata)
     leggendo il Costo TOTALE e le date Start/Finish.
-    
     Usa la logica WBS (Top-Down) per evitare doppio conteggio.
     """
     daily_cost_data = []
@@ -205,56 +204,37 @@ if current_file_to_process is not None:
     if not st.session_state.get('file_processed_success', False):
         with st.spinner('Caricamento e analisi completa del file in corso...'):
             try:
+                # ... (Parsing XML e Dati TUP/TUF invariato) ...
                 current_file_to_process.seek(0); file_content_bytes = current_file_to_process.read()
-                
-                parser = etree.XMLParser(recover=True)
-                tree = etree.fromstring(file_content_bytes, parser=parser)
-                
+                parser = etree.XMLParser(recover=True); tree = etree.fromstring(file_content_bytes, parser=parser)
                 ns = {'msp': 'http://schemas.microsoft.com/project'}
-
-                minutes_per_day = get_minutes_per_day(tree, ns)
-                st.session_state['minutes_per_day'] = minutes_per_day
-
+                minutes_per_day = get_minutes_per_day(tree, ns); st.session_state['minutes_per_day'] = minutes_per_day
                 project_name = "N/D"; formatted_cost = "€ 0,00"; project_start_date = None; project_finish_date = None
-                
                 task_uid_1 = tree.find(".//msp:Task[msp:UID='1']", namespaces=ns)
                 if task_uid_1 is not None:
-                    project_name = task_uid_1.findtext('msp:Name', namespaces=ns) or "N/D"
-                    total_cost_str = task_uid_1.findtext('msp:Cost', namespaces=ns) or "0"
-                    total_cost_euros = float(total_cost_str) / 100.0
+                    project_name = task_uid_1.findtext('msp:Name', namespaces=ns) or "N/D"; total_cost_str = task_uid_1.findtext('msp:Cost', namespaces=ns) or "0"; total_cost_euros = float(total_cost_str) / 100.0
                     formatted_cost = f"€ {total_cost_euros:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                    
                     start_str = task_uid_1.findtext('msp:Start', namespaces=ns); finish_str = task_uid_1.findtext('msp:Finish', namespaces=ns)
                     if start_str: project_start_date = datetime.fromisoformat(start_str).date()
                     if finish_str: project_finish_date = datetime.fromisoformat(finish_str).date()
-                
                 st.session_state['project_total_cost_from_summary'] = formatted_cost
-
                 if not project_start_date: project_start_date = date.today()
                 if not project_finish_date: project_finish_date = project_start_date + timedelta(days=365)
                 if project_start_date > project_finish_date: project_finish_date = project_start_date + timedelta(days=1)
-                
                 st.session_state['project_name'] = project_name; st.session_state['formatted_cost'] = formatted_cost
                 st.session_state['project_start_date'] = project_start_date; st.session_state['project_finish_date'] = project_finish_date
-
                 potential_milestones = {}; all_tasks = tree.findall('.//msp:Task', namespaces=ns)
                 tup_tuf_pattern = re.compile(r'(?i)(TUP|TUF)\s*\d*'); all_tasks_data_list = []
-
                 for task in all_tasks:
                     uid = task.findtext('msp:UID', namespaces=ns); name = task.findtext('msp:Name', namespaces=ns) or "";
                     start_str = task.findtext('msp:Start', namespaces=ns); finish_str = task.findtext('msp:Finish', namespaces=ns);
                     start_date = datetime.fromisoformat(start_str).date() if start_str else None; finish_date = datetime.fromisoformat(finish_str).date() if finish_str else None
                     duration_str = task.findtext('msp:Duration', namespaces=ns); 
-                    
                     cost_str = task.findtext('msp:Cost', namespaces=ns) or "0"
-                    cost_euros = float(cost_str) / 100.0 # Costo in Euro
-                    
+                    cost_euros = float(cost_str) / 100.0
                     duration_formatted = format_duration_from_xml(duration_str)
                     is_milestone_text = (task.findtext('msp:Milestone', namespaces=ns) or '0').lower(); is_milestone = is_milestone_text == '1' or is_milestone_text == 'true'
-                    
-                    # WBS è fondamentale per la logica Gerarchica
                     wbs = task.findtext('msp:WBS', namespaces=ns) or "" 
-                    
                     total_slack_minutes_str = task.findtext('msp:TotalSlack', namespaces=ns) or "0"
                     is_summary_str = task.findtext('msp:Summary', namespaces=ns) or '0'
                     is_summary = is_summary_str == '1'
@@ -265,15 +245,10 @@ if current_file_to_process is not None:
                             mpd = st.session_state.get('minutes_per_day', 480)
                             if mpd > 0: total_slack_days = math.ceil(slack_minutes / mpd)
                         except ValueError: total_slack_days = 0
-                        
                     if uid != '0':
                         all_tasks_data_list.append({"UID": uid, "Name": name, "Start": start_date, "Finish": finish_date, "Duration": duration_formatted, 
-                                                    "Cost": cost_euros, 
-                                                    "Milestone": is_milestone, "Summary": is_summary, 
-                                                    "WBS": wbs, # WBS è cruciale
-                                                    "TotalSlackDays": total_slack_days})
-                    
-                    # Logica TUP/TUF (invariata)
+                                                    "Cost": cost_euros, "Milestone": is_milestone, "Summary": is_summary, 
+                                                    "WBS": wbs, "TotalSlackDays": total_slack_days})
                     match = tup_tuf_pattern.search(name)
                     if match:
                         tup_tuf_key = match.group(0).upper().strip(); duration_str_tup = task.findtext('msp:Duration', namespaces=ns)
@@ -293,8 +268,6 @@ if current_file_to_process is not None:
                                 potential_milestones[tup_tuf_key] = current_task_data
                             elif duration_seconds > existing_duration_seconds:
                                 potential_milestones[tup_tuf_key] = current_task_data
-                
-                # Salvataggio dati TUP/TUF (invariato)
                 final_milestones_data = []
                 for key in potential_milestones:
                     data = potential_milestones[key]
@@ -311,10 +284,7 @@ if current_file_to_process is not None:
                     df_milestones = df_milestones.sort_values(by="DataInizioObj").reset_index(drop=True)
                     st.session_state['df_milestones_display'] = df_milestones.drop(columns=['DataInizioObj'])
                 else: st.session_state['df_milestones_display'] = None
-
                 st.session_state['all_tasks_data'] = pd.DataFrame(all_tasks_data_list)
-                
-                # Debug
                 current_file_to_process.seek(0); debug_content_bytes = current_file_to_process.read(2000);
                 try: st.session_state['debug_raw_text'] = '\n'.join(debug_content_bytes.decode('utf-8', errors='ignore').splitlines()[:50])
                 except Exception as decode_err: st.session_state['debug_raw_text'] = f"Errore decodifica debug: {decode_err}"
@@ -323,8 +293,7 @@ if current_file_to_process is not None:
                 st.rerun()
 
             except Exception as e:
-                print(f"Errore Analisi: {e}")
-                print(traceback.format_exc())
+                print(f"Errore Analisi: {e}"); print(traceback.format_exc())
                 st.error(f"Errore Analisi durante elaborazione iniziale: {e}"); 
                 st.error(f"Traceback: {traceback.format_exc()}"); 
                 st.error("Verifica file XML."); 
@@ -349,7 +318,7 @@ if current_file_to_process is not None:
             excel_data = output.getvalue(); st.download_button(label="Scarica (Excel)", data=excel_data, file_name="termini_utili_TUP_TUF.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         else: st.warning("Nessun Termine Utile (TUP o TUF) trovato nel file.")
 
-        # --- Sezione 3: Selezione Periodo e Analisi (Invariata) ---
+        # --- Sezione 3: Selezione Periodo e Analisi ---
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
         if not default_start: default_start = date.today()
@@ -363,6 +332,17 @@ if current_file_to_process is not None:
             reasonable_max_date = actual_default_finish + timedelta(days=10*365)
             selected_finish_date = st.date_input("Data Fine", value=actual_default_finish, min_value=min_end_date, max_value=reasonable_max_date, format="DD/MM/YYYY", key="finish_date_selector")
 
+        # --- [NUOVO] SELETTORE AGGREGAZIONE ---
+        st.markdown("##### 📦 Seleziona Aggregazione Dati")
+        aggregation_level = st.radio(
+            "Scegli il livello di dettaglio per l'analisi:",
+            ('Mensile', 'Giornaliera'), 
+            key="aggregation_selector", 
+            horizontal=True,
+            help="Scegli 'Giornaliera' per analizzare i dati grezzi calcolati."
+        )
+        # --- FINE NUOVO SELETTORE ---
+
         # --- Analisi Dettagliate ---
         st.markdown("---"); st.markdown("##### 📊 Analisi Dettagliate")
         
@@ -374,43 +354,57 @@ if current_file_to_process is not None:
                 st.error("Errore: Dati delle attività non trovati. Impossibile calcolare la Curva S.")
             else:
                 try:
-                    scurve_source = "Stima Aggregata (Logica WBS)" # Nuovo nome
+                    scurve_source = "Stima Aggregata (Logica WBS)"
                     st.markdown(f"###### Curva S (Dati: {scurve_source})")
                     
                     with st.spinner(f"Calcolo distribuzione costi ({scurve_source})..."):
-                        # Usa la funzione di stima WBS
                         daily_cost_df = calculate_daily_distribution_wbs(all_tasks_dataframe.copy()) 
                     
                     if daily_cost_df.empty:
                         st.error("Errore: Nessun costo trovato nelle attività del file XML.")
-                        st.warning("Impossibile calcolare la Curva S. (Nessuna attività trovata con <Cost> > 0).")
+                        st.warning("Impossibile calcolare la Curva S. (Nessuna attività valida trovata con la logica WBS).")
                         
                     else:
                         selected_start_dt = datetime.combine(selected_start_date, datetime.min.time())
                         selected_finish_dt = datetime.combine(selected_finish_date, datetime.max.time())
                         
                         mask_cost = (daily_cost_df['Date'] >= selected_start_dt) & (daily_cost_df['Date'] <= selected_finish_dt)
-                        filtered_cost = daily_cost_df.loc[mask_cost]
+                        filtered_cost = daily_cost_df.loc[mask_cost] # Questi sono i dati GIORNALIERI filtrati
                         
                         if not filtered_cost.empty:
-                            monthly_cost = filtered_cost.set_index('Date').resample('ME')['Value'].sum().reset_index()
-                            monthly_cost['Costo Cumulato (€)'] = monthly_cost['Value'].cumsum()
-                            monthly_cost['Mese'] = monthly_cost['Date'].dt.strftime('%Y-%m')
                             
-                            st.markdown(f"###### Tabella Dati SIL Mensili ({scurve_source})")
-                            df_display_sil = monthly_cost.copy()
-                            df_display_sil['Costo Mensile (€)'] = df_display_sil['Value'].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                            # --- [MODIFICATO] LOGICA DI AGGREGAZIONE ---
+                            if aggregation_level == 'Mensile':
+                                aggregated_data = filtered_cost.set_index('Date').resample('ME')['Value'].sum().reset_index()
+                                aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime('%Y-%m')
+                                axis_title = "Mese"
+                                col_name = "Costo Mensile (€)"
+                            else: # 'Giornaliera'
+                                aggregated_data = filtered_cost.copy()
+                                aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime('%Y-%m-%d')
+                                axis_title = "Giorno"
+                                col_name = "Costo Giornaliero (€)"
+                            # --- FINE MODIFICA ---
+
+                            aggregated_data['Costo Cumulato (€)'] = aggregated_data['Value'].cumsum()
+                            
+                            st.markdown(f"###### Tabella Dati SIL Aggregati ({aggregation_level})")
+                            df_display_sil = aggregated_data.copy()
+                            # Rinomina 'Value' in base all'aggregazione
+                            df_display_sil.rename(columns={'Value': col_name}, inplace=True)
+                            
+                            df_display_sil[col_name] = df_display_sil[col_name].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
                             df_display_sil['Costo Cumulato (€)'] = df_display_sil['Costo Cumulato (€)'].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                            st.dataframe(df_display_sil[['Mese', 'Costo Mensile (€)', 'Costo Cumulato (€)']], use_container_width=True, hide_index=True)
+                            st.dataframe(df_display_sil[['Periodo', col_name, 'Costo Cumulato (€)']], use_container_width=True, hide_index=True)
                             
-                            st.markdown(f"###### Grafico Curva S ({scurve_source})")
+                            st.markdown(f"###### Grafico Curva S ({aggregation_level})")
                             fig_sil = go.Figure()
-                            fig_sil.add_trace(go.Bar(x=monthly_cost['Mese'], y=monthly_cost['Value'], name=f'Costo Mensile ({scurve_source})'))
-                            fig_sil.add_trace(go.Scatter(x=monthly_cost['Mese'], y=monthly_cost['Costo Cumulato (€)'], name=f'Costo Cumulato ({scurve_source})', mode='lines+markers', yaxis='y2'))
+                            fig_sil.add_trace(go.Bar(x=aggregated_data['Periodo'], y=aggregated_data['Value'], name=f'Costo {aggregation_level}'))
+                            fig_sil.add_trace(go.Scatter(x=aggregated_data['Periodo'], y=aggregated_data['Costo Cumulato (€)'], name=f'Costo Cumulato', mode='lines+markers', yaxis='y2'))
                             fig_sil.update_layout(
-                                title=f'Curva S - Costo Mensile e Cumulato (Dati {scurve_source})',
-                                xaxis_title="Mese",
-                                yaxis=dict(title="Costo Mensile (€)"),
+                                title=f'Curva S - Costo {aggregation_level} e Cumulato (Dati {scurve_source})',
+                                xaxis_title=axis_title,
+                                yaxis=dict(title=f"Costo {aggregation_level} (€)"),
                                 yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"),
                                 legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
                             )
@@ -418,9 +412,10 @@ if current_file_to_process is not None:
                             
                             output_sil = BytesIO()
                             with pd.ExcelWriter(output_sil, engine='openpyxl') as writer:
-                                monthly_cost[['Mese', 'Value', 'Costo Cumulato (€)']].rename(columns={'Value': 'Costo Mensile (€)'}).to_excel(writer, index=False, sheet_name='SIL_Mensile')
+                                aggregated_data.rename(columns={'Value': col_name, 'Periodo': axis_title}, inplace=True)
+                                aggregated_data[[axis_title, col_name, 'Costo Cumulato (€)']].to_excel(writer, index=False, sheet_name=f'SIL_{aggregation_level}')
                             excel_data_sil = output_sil.getvalue()
-                            st.download_button(label="Scarica Dati SIL (Excel)", data=excel_data_sil, file_name="dati_sil_mensile.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_sil")
+                            st.download_button(label=f"Scarica Dati SIL ({aggregation_level})", data=excel_data_sil, file_name=f"dati_sil_{aggregation_level.lower()}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_sil")
 
                             # DEBUG SUL COSTO TOTALE
                             st.markdown("---")
