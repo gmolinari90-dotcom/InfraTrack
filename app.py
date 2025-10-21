@@ -420,10 +420,10 @@ if current_file_to_process is not None:
                                     date_format_display = '%d/%m/%Y'; date_format_excel = '%d/%m/%Y'
                                     aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime(date_format_display)
                                     axis_title = "Giorno"; col_name = "Costo Giornaliero (€)"
-                                    display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', col_summary_name] #<<< CORRETTO
+                                    display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', col_summary_name]
                                     plot_custom_data = aggregated_data[col_summary_name]
                                     excel_filename = "Dati_SIL_Giornalieri.xlsx"
-
+                                # --- Rimosso else superfluo ---
 
                                 aggregated_data['Costo Cumulato (€)'] = aggregated_data['Value'].cumsum()
 
