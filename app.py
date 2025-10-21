@@ -1,4 +1,4 @@
-# --- v12.3 (Logica Estrazione SIL Corretta) ---
+# --- v12.4 (Correzione NameError) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -7,16 +7,16 @@ import re
 import isodate
 from io import BytesIO
 import math
-import plotly.graph_objects as go # Per grafici combinati
-import traceback # Per debug avanzato
+import plotly.graph_objects as go
+import traceback
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v12.3", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v12.4", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
 <style>
-    /* ... (CSS identico - omesso per brevità) ... */
+    /* ... (CSS Identico - omesso per brevità) ... */
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button { font-size: 0.85rem !important; }
     .stApp h2 { font-size: 1.5rem !important; }
     .stApp .stMarkdown h4 { font-size: 1.1rem !important; margin-bottom: 0.5rem; margin-top: 1rem; }
@@ -34,11 +34,10 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v12.3") # Version updated
+st.markdown("## 🚆 InfraTrack v12.4") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
-# ... (Identico a v12.2) ...
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 if st.button("🔄", key="reset_button", help="Resetta l'analisi", disabled=not st.session_state.file_processed_success):
@@ -52,7 +51,6 @@ if st.button("🔄", key="reset_button", help="Resetta l'analisi", disabled=not 
 
 
 # --- CARICAMENTO FILE ---
-# ... (Identico a v12.2) ...
 st.markdown("---"); st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
 uploaded_file = st.file_uploader("Seleziona il file .XML...", type=["xml"], label_visibility="collapsed", key=uploader_key)
@@ -100,7 +98,7 @@ def format_duration_from_xml(duration_str):
          work_days = total_hours / (mpd / 60.0); return f"{round(work_days)}g"
      except Exception: return "N/D"
 
-# --- FUNZIONE ESTRAZIONE DATI TEMPORIZZATI CORRETTA ---
+# --- FUNZIONE ESTRAZIONE DATI TEMPORIZZATI (Nome corretto) ---
 @st.cache_data
 def extract_timephased_data_from_assignments(_assignments_node, _ns, data_type, is_cost=False):
     """
@@ -141,7 +139,7 @@ def extract_timephased_data_from_assignments(_assignments_node, _ns, data_type, 
                                 'Value': value
                             })
                 except Exception as e:
-                    continue # Ignora periodo malformato
+                    continue
                     
     if not data:
         return pd.DataFrame(data, columns=['TaskUID', 'ResourceUID', 'Date', 'Value'])
@@ -173,7 +171,6 @@ if current_file_to_process is not None:
                 project_name = "N/D"; formatted_cost = "€ 0,00"; project_start_date = None; project_finish_date = None
                 task_uid_1 = tree.find(".//msp:Task[msp:UID='1']", namespaces=ns)
                 if task_uid_1 is not None:
-                    # ... (Estrazione dati UID 1) ...
                     project_name = task_uid_1.findtext('msp:Name', namespaces=ns) or "N/D"; total_cost_str = task_uid_1.findtext('msp:Cost', namespaces=ns) or "0"; total_cost_euros = float(total_cost_str) / 100.0
                     formatted_cost = f"€ {total_cost_euros:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
                     start_str = task_uid_1.findtext('msp:Start', namespaces=ns); finish_str = task_uid_1.findtext('msp:Finish', namespaces=ns)
@@ -189,7 +186,6 @@ if current_file_to_process is not None:
                 tup_tuf_pattern = re.compile(r'(?i)(TUP|TUF)\s*\d*'); all_tasks_data_list = []
 
                 for task in all_tasks:
-                    # ... (Estrazione dati base attività, incluso calcolo slack corretto) ...
                     uid = task.findtext('msp:UID', namespaces=ns); name = task.findtext('msp:Name', namespaces=ns) or "";
                     start_str = task.findtext('msp:Start', namespaces=ns); finish_str = task.findtext('msp:Finish', namespaces=ns);
                     start_date = datetime.fromisoformat(start_str).date() if start_str else None; finish_date = datetime.fromisoformat(finish_str).date() if finish_str else None
@@ -199,17 +195,21 @@ if current_file_to_process is not None:
                     is_milestone_text = (task.findtext('msp:Milestone', namespaces=ns) or '0').lower(); is_milestone = is_milestone_text == '1' or is_milestone_text == 'true'
                     wbs = task.findtext('msp:WBS', namespaces=ns) or ""
                     total_slack_minutes_str = task.findtext('msp:TotalSlack', namespaces=ns) or "0"
-                    total_slack_days = 0
+                    
+                    total_slack_days = 0 # Calcolo Slack con try/except corretto
                     if total_slack_minutes_str:
                         try:
                             slack_minutes = float(total_slack_minutes_str)
                             mpd = st.session_state.get('minutes_per_day', 480)
-                            if mpd > 0: total_slack_days = math.ceil(slack_minutes / mpd)
-                        except ValueError: total_slack_days = 0
+                            if mpd > 0:
+                                total_slack_days = math.ceil(slack_minutes / mpd)
+                        except ValueError:
+                            total_slack_days = 0
+
                     if uid != '0':
                          all_tasks_data_list.append({"UID": uid, "Name": name, "Start": start_date, "Finish": finish_date, "Duration": duration_formatted, "Cost": cost_euros, "Milestone": is_milestone, "WBS": wbs, "TotalSlackDays": total_slack_days})
 
-                    # Logica TUP/TUF (corretta)
+                    # Logica TUP/TUF (con indentazione CORRETTA)
                     match = tup_tuf_pattern.search(name)
                     if match:
                          tup_tuf_key = match.group(0).upper().strip(); duration_str_tup = task.findtext('msp:Duration', namespaces=ns)
@@ -222,7 +222,8 @@ if current_file_to_process is not None:
                          start_date_formatted = start_date.strftime("%d/%m/%Y") if start_date else "N/D"; finish_date_formatted = finish_date.strftime("%d/%m/%Y") if finish_date else "N/D"
                          current_task_data = {"Nome Completo": name, "Data Inizio": start_date_formatted, "Data Fine": finish_date_formatted, "Durata": duration_formatted, "DurataSecondi": duration_seconds, "DataInizioObj": start_date}
                          existing_duration_seconds = potential_milestones.get(tup_tuf_key, {}).get("DurataSecondi", -1)
-                         if tup_tuf_key not in potential_milestones: potential_milestones[tup_tuf_key] = current_task_data
+                         if tup_tuf_key not in potential_milestones:
+                              potential_milestones[tup_tuf_key] = current_task_data
                          elif not is_pure_milestone_duration:
                               if existing_duration_seconds == 0:
                                    potential_milestones[tup_tuf_key] = current_task_data
@@ -250,21 +251,23 @@ if current_file_to_process is not None:
                 # Salvataggio TUTTE le attività
                 st.session_state['all_tasks_data'] = pd.DataFrame(all_tasks_data_list)
                 
-                # --- ESTRAZIONE DATI TEMPORIZZATI CORRETTA ---
+                # --- ESTRAZIONE DATI TEMPORIZZATI CON NOME CORRETTO ---
                 assignments_node = tree.find('msp:Assignments', ns)
                 
                 # Cerca Costo Baseline (Type 9) o Fallback (Type 2) per SIL
-                scurve_data = parse_timephased_data_from_assignments(assignments_node, ns, '9', is_cost=True)
+                # USA IL NOME CORRETTO: extract_timephased_data_from_assignments
+                scurve_data = extract_timephased_data_from_assignments(assignments_node, ns, '9', is_cost=True)
                 if scurve_data.empty:
                     st.warning("Dati 'Costo Baseline' (Tipo 9) non trovati. Fallback su 'Costo Schedulato' (Tipo 2) per la Curva S.")
-                    scurve_data = parse_timephased_data_from_assignments(assignments_node, ns, '2', is_cost=True)
-                st.session_state['scurve_data'] = scurve_data # Salva i dati SIL
+                    scurve_data = extract_timephased_data_from_assignments(assignments_node, ns, '2', is_cost=True)
+                st.session_state['scurve_data'] = scurve_data
                 
                 # Cerca Lavoro Baseline (Type 8) o Fallback (Type 1) per Istogrammi
-                baseline_work_data = parse_timephased_data_from_assignments(assignments_node, ns, '8', is_cost=False)
+                # USA IL NOME CORRETTO: extract_timephased_data_from_assignments
+                baseline_work_data = extract_timephased_data_from_assignments(assignments_node, ns, '8', is_cost=False)
                 if baseline_work_data.empty:
                      st.warning("Dati 'Lavoro Baseline' (Tipo 8) non trovati. Fallback su 'Lavoro Schedulato' (Tipo 1) per gli Istogrammi.")
-                     baseline_work_data = parse_timephased_data_from_assignments(assignments_node, ns, '1', is_cost=False)
+                     baseline_work_data = extract_timephased_data_from_assignments(assignments_node, ns, '1', is_cost=False)
                 st.session_state['baseline_work_data'] = baseline_work_data
                 # --- FINE ESTRAZIONE DATI TEMPORIZZATI ---
 
@@ -287,8 +290,9 @@ if current_file_to_process is not None:
                 st.session_state.file_processed_success = True
                 st.rerun()
 
-            except Exception as e:
-                st.error(f"Errore Analisi durante elaborazione iniziale: {e}"); st.error(f"Traceback: {traceback.format_exc()}"); st.error("Verifica file XML."); st.session_state.file_processed_success = False;
+            except etree.XMLSyntaxError as e: st.error(f"Errore Sintassi XML: {e}"); st.error("File malformato?"); st.session_state.file_processed_success = False;
+            except KeyError as ke: st.error(f"Errore interno: Chiave mancante {ke}"); st.error("Problema estrazione dati."); st.session_state.file_processed_success = False;
+            except Exception as e: st.error(f"Errore Analisi durante elaborazione iniziale: {e}"); st.error(f"Traceback: {traceback.format_exc()}"); st.error("Verifica file XML."); st.session_state.file_processed_success = False;
 
 
     # --- VISUALIZZAZIONE DATI E ANALISI AVANZATA ---
@@ -333,7 +337,6 @@ if current_file_to_process is not None:
                  st.error("Errore: Dati SIL non trovati in sessione.")
             elif scurve_df.empty:
                  st.warning("Nessun dato di costo temporizzato (Baseline o Schedulato) trovato nel file. Impossibile generare la Curva S.")
-                 #st.dataframe(scurve_df) # Debug: Mostra il dataframe vuoto
             else:
                 try:
                     # --- CURVA S (SIL) ---
@@ -350,41 +353,21 @@ if current_file_to_process is not None:
                         monthly_cost['Costo Cumulato (€)'] = monthly_cost['Value'].cumsum()
                         monthly_cost['Mese'] = monthly_cost['Date'].dt.strftime('%Y-%m')
                         
-                        # --- PASSO INTERMEDIO: Mostra tabella dati ---
                         st.markdown("###### Tabella Dati SIL Mensili Aggregati")
                         df_display_sil = monthly_cost[['Mese', 'Value', 'Costo Cumulato (€)']].rename(columns={'Value': 'Costo Mensile (€)'})
-                        # Formattiamo i numeri per la visualizzazione nella tabella
                         df_display_sil['Costo Mensile (€)'] = df_display_sil['Costo Mensile (€)'].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
                         df_display_sil['Costo Cumulato (€)'] = df_display_sil['Costo Cumulato (€)'].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
                         st.dataframe(df_display_sil, use_container_width=True, hide_index=True)
                         
-                        # --- GRAFICO COMBINATO (Barre + Linea) ---
                         st.markdown("###### Grafico Curva S")
                         fig_sil = go.Figure()
-                        # Aggiungi Barre (Costo Mensile)
-                        fig_sil.add_trace(go.Bar(
-                            x=monthly_cost['Mese'],
-                            y=monthly_cost['Value'],
-                            name='Costo Mensile'
-                        ))
-                        # Aggiungi Linea (Costo Cumulato)
-                        fig_sil.add_trace(go.Scatter(
-                            x=monthly_cost['Mese'],
-                            y=monthly_cost['Costo Cumulato (€)'],
-                            name='Costo Cumulato',
-                            mode='lines+markers',
-                            yaxis='y2' # Usa un asse Y secondario
-                        ))
-                        # Configura layout con doppio asse Y
+                        fig_sil.add_trace(go.Bar(x=monthly_cost['Mese'], y=monthly_cost['Value'], name='Costo Mensile'))
+                        fig_sil.add_trace(go.Scatter(x=monthly_cost['Mese'], y=monthly_cost['Costo Cumulato (€)'], name='Costo Cumulato', mode='lines+markers', yaxis='y2'))
                         fig_sil.update_layout(
                             title='Curva S - Costo Mensile e Cumulato (Stima Lineare)',
                             xaxis_title="Mese",
                             yaxis=dict(title="Costo Mensile (€)"),
-                            yaxis2=dict(
-                                title="Costo Cumulato (€)",
-                                overlaying="y",
-                                side="right"
-                            ),
+                            yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"),
                             legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
                         )
                         st.plotly_chart(fig_sil, use_container_width=True)
@@ -409,6 +392,12 @@ if current_file_to_process is not None:
                     st.error(f"Errore durante l'analisi avanzata: {analysis_error}")
                     st.error(traceback.format_exc())
         
+        # --- Placeholder per Istogrammi ---
+        st.markdown("---")
+        st.markdown("###### Istogrammi Risorse")
+        st.info("Logica istogrammi da implementare.")
+
+
         # --- Debug Section ---
         debug_text = st.session_state.get('debug_raw_text')
         if debug_text:
