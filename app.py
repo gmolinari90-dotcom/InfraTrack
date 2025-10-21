@@ -1,4 +1,4 @@
-# --- v11.2 (Base Stabile v3.10 CORRETTA) ---
+# --- v11.3 (Base v3.10 + SIL/Istogrammi CORRETTA) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -6,10 +6,12 @@ from datetime import datetime, date, timedelta
 import re
 import isodate
 from io import BytesIO
-import math # Importato per calcolo slack
+import math
+import plotly.express as px # Aggiunto per i grafici
+import traceback # Per debug avanzato
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v11.2", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v11.3", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 # Stili CSS dalla v3.10
@@ -20,6 +22,8 @@ st.markdown("""
     .stApp h2 { font-size: 1.5rem !important; }
     .stApp .stMarkdown h4 { font-size: 1.1rem !important; margin-bottom: 0.5rem; margin-top: 1rem; }
     .stApp .stMarkdown h5 { font-size: 0.90rem !important; margin-bottom: 0.5rem; margin-top: 0.8rem; }
+    /* Aggiunto stile per h6 */
+    .stApp .stMarkdown h6 { font-size: 0.88rem !important; margin-bottom: 0.4rem; margin-top: 0.8rem; font-weight: bold;}
     button[data-testid="stButton"][kind="primary"][key="reset_button"] { padding: 0.2rem 0.5rem !important; line-height: 1.2 !important; font-size: 1.1rem !important; border-radius: 0.25rem !important; }
     button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled { cursor: not-allowed; opacity: 0.5; }
     .stApp { padding-top: 2rem; }
@@ -32,19 +36,20 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v11.2") # Version updated
+st.markdown("## 🚆 InfraTrack v11.3") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
-# --- GESTIONE RESET (dalla v3.10) ---
+# --- GESTIONE RESET (dalla v3.10, aggiornato) ---
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 if st.button("🔄", key="reset_button", help="Resetta l'analisi", disabled=not st.session_state.file_processed_success):
     st.session_state.widget_key_counter += 1; st.session_state.file_processed_success = False
-    keys_to_reset = ['uploaded_file_state', 'project_name', 'formatted_cost','df_milestones_display',
-                     'debug_raw_text', 'project_start_date','project_finish_date',
-                     'all_tasks_data', 'minutes_per_day'] # Rimosso 'slider_value'
+    # Resetta TUTTE le chiavi per pulizia completa
+    keys_to_reset = list(st.session_state.keys())
     for key in keys_to_reset:
-        if key in st.session_state: del st.session_state[key]
+        if not key.startswith("_"): del st.session_state[key]
+    st.session_state.widget_key_counter = 1 # Reimposta contatore chiave
+    st.session_state.file_processed_success = False
     st.rerun()
 
 
@@ -59,9 +64,7 @@ if uploaded_file is not None and uploaded_file != st.session_state.get('uploaded
 elif 'uploaded_file_state' not in st.session_state:
      uploaded_file = None
 
-
 # --- FUNZIONI HELPER (definite globalmente) ---
-# Necessarie per l'estrazione dati
 @st.cache_data # Cache per non ricalcolare inutilmente
 def get_minutes_per_day(_tree, _ns):
     minutes_per_day = 480 # Default 8 ore
@@ -84,8 +87,8 @@ def get_minutes_per_day(_tree, _ns):
         pass # Ritorna il default
     return minutes_per_day
 
-def format_duration_from_xml(duration_str, work_hours_per_day=8.0):
-     mpd = st.session_state.get('minutes_per_day', 480) # Usa valore salvato
+def format_duration_from_xml(duration_str):
+     mpd = st.session_state.get('minutes_per_day', 480)
      if not duration_str or mpd <= 0: return "0g"
      try:
          if duration_str.startswith('T'): duration_str = 'P' + duration_str
@@ -95,6 +98,55 @@ def format_duration_from_xml(duration_str, work_hours_per_day=8.0):
          work_days = total_hours / (mpd / 60.0); return f"{round(work_days)}g"
      except Exception: return "N/D"
 
+# --- DEFINIZIONE FUNZIONE MANCANTE ---
+def parse_timephased_data_from_assignments(assignments_node, ns, data_type, is_cost=False):
+    """
+    Estrae dati timephased (Lavoro o Costo) dal NODO ASSIGNMENTS.
+    data_type: '1' (Lavoro), '2' (Costo), '8' (Lavoro Baseline), '9' (Costo Baseline)
+    """
+    data = []
+    if assignments_node is None:
+        return pd.DataFrame(data, columns=['TaskUID', 'ResourceUID', 'Date', 'Value'])
+
+    for assignment in assignments_node.findall('msp:Assignment', ns):
+        task_uid = assignment.findtext('msp:TaskUID', namespaces=ns)
+        resource_uid = assignment.findtext('msp:ResourceUID', namespaces=ns)
+        
+        timephased_data_block = assignment.find(f"msp:TimephasedData[msp:Type='{data_type}']", ns)
+        
+        if timephased_data_block is not None:
+            for period in timephased_data_block.findall('msp:Value', ns):
+                try:
+                    start_str = period.findtext('msp:Start', namespaces=ns)
+                    value_str = period.findtext('msp:Value', namespaces=ns)
+
+                    if start_str and value_str and value_str != "0":
+                        start_date = datetime.fromisoformat(start_str).date()
+                        value = 0.0
+                        
+                        if is_cost:
+                            value = float(value_str) / 100.0 # Costo è in centesimi
+                        else: # È Lavoro
+                            duration_obj = isodate.parse_duration(value_str) # Lavoro è in formato PT...H...M...S
+                            value = duration_obj.total_seconds() / 3600 # Converti in ore
+                        
+                        if value > 0:
+                            data.append({
+                                'TaskUID': task_uid,
+                                'ResourceUID': resource_uid,
+                                'Date': start_date,
+                                'Value': value
+                            })
+                except Exception as e:
+                    continue # Ignora periodo malformato
+                    
+    if not data:
+        return pd.DataFrame(data, columns=['TaskUID', 'ResourceUID', 'Date', 'Value'])
+
+    return pd.DataFrame(data)
+# --- FINE DEFINIZIONE FUNZIONE ---
+
+
 # --- INIZIO ANALISI ---
 current_file_to_process = st.session_state.get('uploaded_file_state')
 
@@ -102,13 +154,10 @@ if current_file_to_process is not None:
     if not st.session_state.get('file_processed_success', False):
         with st.spinner('Caricamento e analisi completa del file in corso...'):
             try:
-                # --- Logica parsing e estrazione dati come in v3.10, con correzioni ---
                 current_file_to_process.seek(0); file_content_bytes = current_file_to_process.read()
                 parser = etree.XMLParser(recover=True); tree = etree.fromstring(file_content_bytes, parser=parser)
                 ns = {'msp': 'http://schemas.microsoft.com/project'}
-                project_name = "N/D"; formatted_cost = "€ 0,00"; project_start_date = None; project_finish_date = None
 
-                # Calcola e salva minutes_per_day
                 minutes_per_day = get_minutes_per_day(tree, ns)
                 st.session_state['minutes_per_day'] = minutes_per_day
 
@@ -152,7 +201,7 @@ if current_file_to_process is not None:
                     if uid != '0':
                          all_tasks_data_list.append({"UID": uid, "Name": name, "Start": start_date, "Finish": finish_date, "Duration": duration_formatted, "Cost": cost_euros, "Milestone": is_milestone, "WBS": wbs, "TotalSlackDays": total_slack_days})
 
-                    # --- Logica TUP/TUF con INDENTAZIONE CORRETTA ---
+                    # Logica TUP/TUF (con indentazione CORRETTA)
                     match = tup_tuf_pattern.search(name)
                     if match:
                          tup_tuf_key = match.group(0).upper().strip(); duration_str_tup = task.findtext('msp:Duration', namespaces=ns)
@@ -165,16 +214,13 @@ if current_file_to_process is not None:
                          start_date_formatted = start_date.strftime("%d/%m/%Y") if start_date else "N/D"; finish_date_formatted = finish_date.strftime("%d/%m/%Y") if finish_date else "N/D"
                          current_task_data = {"Nome Completo": name, "Data Inizio": start_date_formatted, "Data Fine": finish_date_formatted, "Durata": duration_formatted, "DurataSecondi": duration_seconds, "DataInizioObj": start_date}
                          existing_duration_seconds = potential_milestones.get(tup_tuf_key, {}).get("DurataSecondi", -1)
-
                          if tup_tuf_key not in potential_milestones:
                               potential_milestones[tup_tuf_key] = current_task_data
                          elif not is_pure_milestone_duration:
                               if existing_duration_seconds == 0:
                                    potential_milestones[tup_tuf_key] = current_task_data
                               elif duration_seconds > existing_duration_seconds:
-                                   # INDENTAZIONE CORRETTA
                                    potential_milestones[tup_tuf_key] = current_task_data
-                    # --- FINE LOGICA TUP/TUF ---
 
                 # Salvataggio dati TUP/TUF
                 final_milestones_data = []
@@ -197,8 +243,9 @@ if current_file_to_process is not None:
                 # Salvataggio TUTTE le attività
                 st.session_state['all_tasks_data'] = pd.DataFrame(all_tasks_data_list)
 
-                # Estrazione Dati Temporizzati
+                # --- ESTRAZIONE DATI TEMPORIZZATI CORRETTA ---
                 assignments_node = tree.find('msp:Assignments', ns)
+                
                 # Cerca Costo Baseline (Type 9) o Fallback (Type 2)
                 scurve_data = parse_timephased_data_from_assignments(assignments_node, ns, '9', is_cost=True)
                 if scurve_data.empty:
@@ -212,6 +259,7 @@ if current_file_to_process is not None:
                      st.warning("Dati 'Lavoro Baseline' (Tipo 8) non trovati. Fallback su 'Lavoro Schedulato' (Tipo 1) per gli Istogrammi.")
                      baseline_work_data = parse_timephased_data_from_assignments(assignments_node, ns, '1', is_cost=False)
                 st.session_state['baseline_work_data'] = baseline_work_data
+                # --- FINE ESTRAZIONE DATI TEMPORIZZATI ---
 
                 # Estrazione Dati Risorse
                 resources_node = tree.find('msp:Resources', ns); resources_data = []
@@ -238,17 +286,17 @@ if current_file_to_process is not None:
             except Exception as e: st.error(f"Errore Analisi durante elaborazione iniziale: {e}"); st.error(f"Traceback: {traceback.format_exc()}"); st.error("Verifica file XML."); st.session_state.file_processed_success = False;
 
 
-    # --- VISUALIZZAZIONE DATI E SELEZIONE PERIODO ---
+    # --- VISUALIZZAZIONE DATI E ANALISI AVANZATA ---
     if st.session_state.get('file_processed_success', False):
         # --- Sezione 2: Analisi Preliminare ---
         st.markdown("---"); st.markdown("#### 2. Analisi Preliminare"); st.markdown("##### 📄 Informazioni Generali dell'Appalto")
         project_name = st.session_state.get('project_name', "N/D"); formatted_cost = st.session_state.get('formatted_cost', "N/D")
         
         # --- CORREZIONE DEFINITIVA SYNTAX ERROR ---
-        col1_disp, col2_disp = st.columns(2) # Riga 1
-        with col1_disp: # Riga 2
+        col1_disp, col2_disp = st.columns(2)
+        with col1_disp:
             st.markdown(f"**Nome:** {project_name}")
-        with col2_disp: # Riga 3
+        with col2_disp:
             st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
         # --- FINE CORREZIONE ---
 
@@ -261,7 +309,7 @@ if current_file_to_process is not None:
             excel_data = output.getvalue(); st.download_button(label="Scarica (Excel)", data=excel_data, file_name="termini_utili_TUP_TUF.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         else: st.warning("Nessun Termine Utile (TUP o TUF) trovato nel file.")
 
-        # --- Sezione 3: Selezione Periodo ---
+        # --- Sezione 3: Selezione Periodo e Analisi ---
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
         if not default_start: default_start = date.today()
@@ -275,19 +323,18 @@ if current_file_to_process is not None:
             reasonable_max_date = actual_default_finish + timedelta(days=10*365)
             selected_finish_date = st.date_input("Data Fine", value=actual_default_finish, min_value=min_end_date, max_value=reasonable_max_date, format="DD/MM/YYYY", key="finish_date_selector")
 
-        # --- Inizio Analisi Dettagliate ---
+        # --- Analisi Dettagliate ---
         st.markdown("---"); st.markdown("##### 📊 Analisi Dettagliate")
         
-        # Recupera i dati dalla sessione
-        scurve_df = st.session_state.get('scurve_data')
-        baseline_work_df = st.session_state.get('baseline_work_data')
-        resources_df = st.session_state.get('resources_data')
-        
-        if scurve_df is None or baseline_work_df is None or resources_df is None:
-             st.error("Errore: Dati temporizzati o dati risorse non trovati. Il file XML potrebbe essere incompleto.")
-        else:
-            # --- Bottone per avviare l'analisi ---
-            if st.button("📈 Avvia Analisi Dettagliata", key="analyze_details"):
+        # Bottone per avviare l'analisi (come richiesto)
+        if st.button("📈 Avvia Analisi Dettagliata", key="analyze_details"):
+            scurve_df = st.session_state.get('scurve_data')
+            baseline_work_df = st.session_state.get('baseline_work_data')
+            resources_df = st.session_state.get('resources_data')
+
+            if scurve_df is None or baseline_work_df is None or resources_df is None:
+                 st.error("Errore: Dati temporizzati o dati risorse non trovati. Il file XML potrebbe essere incompleto.")
+            else:
                 try:
                     # --- CURVA S (SIL) ---
                     st.markdown("###### Curva S (Costo Cumulato)")
@@ -298,7 +345,10 @@ if current_file_to_process is not None:
                         filtered_cost = cost_df_dated.loc[mask_cost]
                         
                         if not filtered_cost.empty:
-                            monthly_cost = filtered_cost.set_index('Date').resample('ME')['Value'].sum().reset_index()
+                            # Aggrega per Giorno prima, poi per Mese per assicurare correttezza
+                            daily_cost = filtered_cost.groupby('Date')['Value'].sum().reset_index()
+                            daily_cost = daily_cost.set_index('Date')
+                            monthly_cost = daily_cost.resample('ME')['Value'].sum().reset_index()
                             monthly_cost['Costo Cumulato (€)'] = monthly_cost['Value'].cumsum()
                             monthly_cost['Mese'] = monthly_cost['Date'].dt.strftime('%Y-%m')
                             
@@ -324,7 +374,12 @@ if current_file_to_process is not None:
                         filtered_work = work_df_dated.loc[mask_work]
                         if not filtered_work.empty:
                              work_with_resources = pd.merge(filtered_work, resources_df, on='ResourceUID', how='left')
-                             monthly_work = work_with_resources.set_index('Date').groupby([pd.Grouper(freq='ME'), 'ResourceType'])['Value'].sum().reset_index(); monthly_work['Mese'] = monthly_work['Date'].dt.strftime('%Y-%m')
+                             # Aggrega per Giorno prima, poi per Mese
+                             daily_work = work_with_resources.groupby(['Date', 'ResourceType'])['Value'].sum().reset_index()
+                             daily_work = daily_work.set_index('Date')
+                             monthly_work = daily_work.groupby([pd.Grouper(freq='ME'), 'ResourceType'])['Value'].sum().reset_index()
+                             monthly_work['Mese'] = monthly_work['Date'].dt.strftime('%Y-%m')
+                             
                              manodopera_df = monthly_work[monthly_work['ResourceType'] == 'Manodopera']; mezzi_df = monthly_work[monthly_work['ResourceType'] == 'Mezzo/Materiale']
                              
                              if not manodopera_df.empty:
