@@ -1,4 +1,4 @@
-# --- v16.1 (Logica Curva S: Stima Lineare Aggregata, SENZA Filtro WBS) ---
+# --- v17.0 (Logica Curva S: Stima Aggregata con Filtro WBS Gerarchico) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -11,7 +11,7 @@ import plotly.graph_objects as go # Importa Graph Objects per grafici combinati
 import traceback # Per debug avanzato
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v16.1", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v17.0", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -43,7 +43,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v16.1") # Version updated
+st.markdown("## 🚆 InfraTrack v17.0") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -116,15 +116,21 @@ def format_duration_from_xml(duration_str):
         work_days = total_hours / (minutes_per_day / 60.0); return f"{round(work_days)}g"
     except Exception: return "N/D"
 
-# --- [MODIFICATA v16.1] FUNZIONE CALCOLO SIL (Logica Semplificata) ---
-@st.cache_data
-def calculate_daily_distribution(_tasks_dataframe):
-    """
-    Calcola la distribuzione giornaliera dei costi (Stima Lineare)
-    leggendo il Costo TOTALE (<Cost>) e le date Start/Finish.
+# --- HELPER PER WBS ---
+def get_parent_wbs(wbs_string):
+    """Estrae il WBS genitore (es. da '1.2.1' a '1.2')."""
+    if wbs_string is None or "." not in wbs_string:
+        return None
+    return wbs_string.rsplit('.', 1)[0]
     
-    Come da richiesta: Filtra *solo* per Costo > 0.
-    NON usa filtri WBS per doppio conteggio.
+# --- FUNZIONE PER CALCOLARE SIL (Logica WBS Gerarchica) ---
+@st.cache_data
+def calculate_daily_distribution_wbs(_tasks_dataframe):
+    """
+    Calcola la distribuzione giornaliera dei costi (Stima Aggregata)
+    leggendo il Costo TOTALE e le date Start/Finish.
+    
+    Usa la logica WBS (Top-Down) per evitare doppio conteggio.
     """
     daily_cost_data = []
     
@@ -133,31 +139,41 @@ def calculate_daily_distribution(_tasks_dataframe):
     tasks_dataframe['Start'] = pd.to_datetime(tasks_dataframe['Start'], errors='coerce').dt.date
     tasks_dataframe['Finish'] = pd.to_datetime(tasks_dataframe['Finish'], errors='coerce').dt.date
     
-    # --- FILTRO SEMPLIFICATO ---
+    # --- FILTRO GERARCHICO (WBS) ---
     
-    # 1. Rimuovi attività senza date valide o costo
-    filtered_tasks_dataframe = tasks_dataframe.dropna(subset=['Start', 'Finish', 'Cost'])
+    # 1. Rimuovi attività senza date valide o WBS
+    filtered_tasks_dataframe = tasks_dataframe.dropna(subset=['Start', 'Finish', 'Cost', 'WBS'])
     
-    # 2. Considera solo attività con costo > 0 (come da tuo snippet UID 3694 che ha Cost=0)
-    tasks_to_distribute = filtered_tasks_dataframe[filtered_tasks_dataframe['Cost'] > 0]
+    # 2. Considera solo attività con costo > 0
+    filtered_tasks_dataframe = filtered_tasks_dataframe[filtered_tasks_dataframe['Cost'] > 0]
     
+    # 3. Identifica i WBS di *tutte* le attività che hanno un costo
+    cost_wbs_string_set = set(filtered_tasks_dataframe['WBS'].dropna().astype(str))
+    
+    # 4. Trova il WBS genitore per ogni attività
+    filtered_tasks_dataframe['Parent_WBS'] = filtered_tasks_dataframe['WBS'].astype(str).apply(get_parent_wbs)
+    
+    # 5. Controlla se il genitore è *anch'esso* nel set di attività con costo
+    filtered_tasks_dataframe['Parent_Has_Cost'] = filtered_tasks_dataframe['Parent_WBS'].isin(cost_wbs_string_set)
+    
+    # 6. Il dataframe finale da distribuire contiene SOLO le attività
+    #    il cui genitore NON ha un costo. (Questa è la logica anti-doppio-conteggio)
+    tasks_to_distribute = filtered_tasks_dataframe[filtered_tasks_dataframe['Parent_Has_Cost'] == False]
     # --- FINE FILTRO ---
 
-    # Salvataggio dati per il debug
     st.session_state['debug_task_count'] = len(tasks_to_distribute) 
     st.session_state['debug_total_cost'] = tasks_to_distribute['Cost'].sum() 
 
     for _, task in tasks_to_distribute.iterrows():
         start_date = task['Start']
         finish_date = task['Finish']
-        total_cost = task['Cost'] # Già in Euro (diviso / 100 durante il parsing)
+        total_cost = task['Cost'] # Già in Euro
         
         duration_days = (finish_date - start_date).days
         
         if duration_days < 0: 
             continue 
         
-        # Es: 15/01 -> 19/01 sono 5 giorni (duration_days = 4)
         number_of_days_in_period = duration_days + 1
         
         if number_of_days_in_period <= 0:
@@ -204,7 +220,6 @@ if current_file_to_process is not None:
                 task_uid_1 = tree.find(".//msp:Task[msp:UID='1']", namespaces=ns)
                 if task_uid_1 is not None:
                     project_name = task_uid_1.findtext('msp:Name', namespaces=ns) or "N/D"
-                    # Leggiamo il costo totale del progetto (dal riepilogo)
                     total_cost_str = task_uid_1.findtext('msp:Cost', namespaces=ns) or "0"
                     total_cost_euros = float(total_cost_str) / 100.0
                     formatted_cost = f"€ {total_cost_euros:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -213,7 +228,7 @@ if current_file_to_process is not None:
                     if start_str: project_start_date = datetime.fromisoformat(start_str).date()
                     if finish_str: project_finish_date = datetime.fromisoformat(finish_str).date()
                 
-                st.session_state['project_total_cost_from_summary'] = formatted_cost # Salviamo il costo ufficiale
+                st.session_state['project_total_cost_from_summary'] = formatted_cost
 
                 if not project_start_date: project_start_date = date.today()
                 if not project_finish_date: project_finish_date = project_start_date + timedelta(days=365)
@@ -231,13 +246,15 @@ if current_file_to_process is not None:
                     start_date = datetime.fromisoformat(start_str).date() if start_str else None; finish_date = datetime.fromisoformat(finish_str).date() if finish_str else None
                     duration_str = task.findtext('msp:Duration', namespaces=ns); 
                     
-                    # Costo totale (da <Cost>)
                     cost_str = task.findtext('msp:Cost', namespaces=ns) or "0"
-                    cost_euros = float(cost_str) / 100.0 # Assumiamo sia in centesimi
+                    cost_euros = float(cost_str) / 100.0 # Costo in Euro
                     
                     duration_formatted = format_duration_from_xml(duration_str)
                     is_milestone_text = (task.findtext('msp:Milestone', namespaces=ns) or '0').lower(); is_milestone = is_milestone_text == '1' or is_milestone_text == 'true'
-                    wbs = task.findtext('msp:WBS', namespaces=ns) or ""
+                    
+                    # WBS è fondamentale per la logica Gerarchica
+                    wbs = task.findtext('msp:WBS', namespaces=ns) or "" 
+                    
                     total_slack_minutes_str = task.findtext('msp:TotalSlack', namespaces=ns) or "0"
                     is_summary_str = task.findtext('msp:Summary', namespaces=ns) or '0'
                     is_summary = is_summary_str == '1'
@@ -251,8 +268,10 @@ if current_file_to_process is not None:
                         
                     if uid != '0':
                         all_tasks_data_list.append({"UID": uid, "Name": name, "Start": start_date, "Finish": finish_date, "Duration": duration_formatted, 
-                                                    "Cost": cost_euros, # Usiamo questo per la curva S
-                                                    "Milestone": is_milestone, "Summary": is_summary, "WBS": wbs, "TotalSlackDays": total_slack_days})
+                                                    "Cost": cost_euros, 
+                                                    "Milestone": is_milestone, "Summary": is_summary, 
+                                                    "WBS": wbs, # WBS è cruciale
+                                                    "TotalSlackDays": total_slack_days})
                     
                     # Logica TUP/TUF (invariata)
                     match = tup_tuf_pattern.search(name)
@@ -294,11 +313,6 @@ if current_file_to_process is not None:
                 else: st.session_state['df_milestones_display'] = None
 
                 st.session_state['all_tasks_data'] = pd.DataFrame(all_tasks_data_list)
-                
-                # Rimuoviamo i vecchi dati (v15) se esistono
-                if 'scurve_data' in st.session_state: del st.session_state['scurve_data']
-                if 'scurve_source' in st.session_state: del st.session_state['scurve_source']
-
                 
                 # Debug
                 current_file_to_process.seek(0); debug_content_bytes = current_file_to_process.read(2000);
@@ -360,12 +374,12 @@ if current_file_to_process is not None:
                 st.error("Errore: Dati delle attività non trovati. Impossibile calcolare la Curva S.")
             else:
                 try:
-                    scurve_source = "Stima Aggregata (da <Cost>)" # Nuovo nome
+                    scurve_source = "Stima Aggregata (Logica WBS)" # Nuovo nome
                     st.markdown(f"###### Curva S (Dati: {scurve_source})")
                     
                     with st.spinner(f"Calcolo distribuzione costi ({scurve_source})..."):
-                        # Usa la NUOVA funzione di stima SEMPLIFICATA
-                        daily_cost_df = calculate_daily_distribution(all_tasks_dataframe.copy()) 
+                        # Usa la funzione di stima WBS
+                        daily_cost_df = calculate_daily_distribution_wbs(all_tasks_dataframe.copy()) 
                     
                     if daily_cost_df.empty:
                         st.error("Errore: Nessun costo trovato nelle attività del file XML.")
@@ -413,16 +427,15 @@ if current_file_to_process is not None:
                             st.markdown(f"##### Diagnostica Dati Calcolati ({scurve_source})")
                             
                             debug_task_count = st.session_state.get('debug_task_count', 0)
-                            st.write(f"**Numero attività usate per la distribuzione (con Cost > 0):** {debug_task_count}")
+                            st.write(f"**Numero attività usate per la distribuzione (filtro WBS):** {debug_task_count}")
                             
                             debug_total = st.session_state.get('debug_total_cost', 0)
                             formatted_debug_cost = f"€ {debug_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                            st.write(f"**Costo Totale Calcolato (somma <Cost> attività filtrate):** {formatted_debug_cost}")
+                            st.write(f"**Costo Totale Calcolato (somma attività WBS valide):** {formatted_debug_cost}")
                             
-                            # Confronto con il costo totale ufficiale del progetto
                             project_total = st.session_state.get('project_total_cost_from_summary', 'N/D')
                             st.caption(f"Costo Totale Ufficiale (da Riepilogo Progetto): {project_total}")
-                            st.caption("I due totali potrebbero differire se il file ha costi sia sui padri che sui figli (doppio conteggio).")
+                            st.caption("I due totali dovrebbero ora corrispondere, grazie al filtro gerarchico WBS.")
 
 
                         else:
