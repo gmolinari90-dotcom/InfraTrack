@@ -69,7 +69,7 @@ def get_minutes_per_day(_tree, _ns):
     try:
         default_calendar = _tree.find(".//msp:Calendar[msp:UID='1']", namespaces=_ns)
         if default_calendar is not None:
-             working_day = default_calendar.find(".//msp:WeekDay[msp:DayType='1']", namespaces=_ns)
+             working_day = default_calendar.find(".//msp:WeekDay[msp:DayType='1']", namespaces=_ns) # Tipo 1 = giorno lavorativo
              if working_day is not None:
                   working_minutes = 0
                   for working_time in working_day.findall(".//msp:WorkingTime", namespaces=_ns):
@@ -96,7 +96,7 @@ def format_duration_from_xml(duration_str):
          work_days = total_hours / (mpd / 60.0); return f"{round(work_days)}g"
      except Exception: return "N/D"
 
-# --- FUNZIONE ESTRAZIONE DATI TEMPORIZZATI CORRETTA ---
+# --- FUNZIONE ESTRAZIONE DATI TEMPORIZZATI (Corretta) ---
 @st.cache_data
 def extract_timephased_data_from_assignments(_assignments_node, _ns, data_type, is_cost=False):
     """
@@ -342,6 +342,7 @@ if current_file_to_process is not None:
             if scurve_df is None:
                  st.error("Errore: Dati SIL non trovati in sessione.")
             elif scurve_df.empty:
+                 # Questo è l'errore che ricevi ora.
                  st.warning("Nessun dato di costo temporizzato (Baseline o Schedulato) trovato nel file. Impossibile generare la Curva S.")
             else:
                 try:
