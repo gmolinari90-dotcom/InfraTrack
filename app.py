@@ -1,4 +1,4 @@
-# --- v17.7 (Mostra Nome Riepilogo WBS Immediato in Vista Giornaliera) ---
+# --- v17.8 (Titoli Sezione e Grafico Aggiornati) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -12,7 +12,7 @@ import traceback
 import os
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v17.7", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v17.8", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -37,7 +37,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v17.7") # Version updated
+st.markdown("## 🚆 InfraTrack v17.8") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -123,7 +123,6 @@ def calculate_daily_distribution_bottom_up(_tasks_dataframe):
         has_child_with_cost = False
         for child_index, potential_child in valid_tasks_df.loc[valid_tasks_df.index != index].iterrows():
              child_wbs = potential_child['WBS']
-             # Controllo figlio diretto
              if child_wbs.startswith(task_wbs + '.') and child_wbs.count('.') == task_wbs.count('.') + 1:
                  has_child_with_cost = True; break
         if not has_child_with_cost:
@@ -157,53 +156,33 @@ def calculate_daily_distribution_bottom_up(_tasks_dataframe):
     daily_dataframe['Date'] = pd.to_datetime(daily_dataframe['Date'])
     return daily_dataframe
 
-# --- [MODIFICATA v17.7] FUNZIONE HELPER per nome riepilogo ---
 def get_relevant_summary_name(wbs_list, wbs_map):
-    """
-    Data una lista di WBS e una mappa WBS->Nome:
-    - Se tutti hanno lo stesso padre diretto, restituisce il nome del padre.
-    - Altrimenti, restituisce il nome del genitore comune più alto.
-    """
+    # ... (Funzione invariata v17.7) ...
     if not wbs_list: return "N/D"
-
-    unique_wbs_list = sorted(list(set(wbs_list))) # Rimuovi duplicati e ordina
-
-    # Caso 1: Solo un WBS o tutti uguali
+    unique_wbs_list = sorted(list(set(wbs_list)))
     if len(unique_wbs_list) == 1:
         leaf_wbs = unique_wbs_list[0]
         if '.' in leaf_wbs:
             parent_wbs = leaf_wbs.rsplit('.', 1)[0]
             parent_name = wbs_map.get(parent_wbs)
-            if parent_name: return parent_name # Nome del padre diretto
-        return wbs_map.get(leaf_wbs, "Attività Sconosciuta") # Fallback: nome foglia
-
-    # Caso 2: WBS multipli, controlla se hanno lo stesso padre diretto
+            if parent_name: return parent_name
+        return wbs_map.get(leaf_wbs, "Attività Sconosciuta")
     direct_parents = set()
     for wbs in unique_wbs_list:
-        if '.' in wbs:
-            direct_parents.add(wbs.rsplit('.', 1)[0])
-        else:
-             direct_parents.add(None) # Task di primo livello non hanno '.'
-
-    # Se c'è un solo padre diretto (o None per task di primo livello)
+        if '.' in wbs: direct_parents.add(wbs.rsplit('.', 1)[0])
+        else: direct_parents.add(None)
     if len(direct_parents) == 1:
         parent_wbs = list(direct_parents)[0]
-        if parent_wbs: # Se non è None
+        if parent_wbs:
             parent_name = wbs_map.get(parent_wbs)
             if parent_name: return parent_name
-        # Se il padre è None o non trovato, usa logica "highest common" come fallback
-        pass # Lascia che esegua la logica sotto
-
-    # Caso 3: Padri diretti diversi -> Trova il genitore comune più alto
     try:
         paths = [wbs.replace('.', '/') for wbs in unique_wbs_list]
         common_path_prefix = os.path.commonprefix(paths)
         if common_path_prefix.endswith('/'): common_path_prefix = common_path_prefix[:-1]
         common_wbs = common_path_prefix.replace('/', '.')
-
         if not common_wbs:
              root_task_name = wbs_map.get('1'); return root_task_name if root_task_name else "Riepilogo Progetto"
-
         parent_name = wbs_map.get(common_wbs)
         if parent_name: return parent_name
         else:
@@ -212,10 +191,7 @@ def get_relevant_summary_name(wbs_list, wbs_map):
                 grandparent_name = wbs_map.get(parent_of_common)
                 if grandparent_name: return grandparent_name
             return f"Riepilogo: {common_wbs}"
-    except Exception:
-        return "Attività Multiple"
-# --- FINE FUNZIONE ---
-
+    except Exception: return "Attività Multiple"
 
 # --- INIZIO ANALISI ---
 current_file_to_process = st.session_state.get('uploaded_file_state')
@@ -334,6 +310,7 @@ if current_file_to_process is not None:
             excel_data = output.getvalue(); st.download_button(label="Scarica (Excel)", data=excel_data, file_name="termini_utili_TUP_TUF.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         else: st.warning("Nessun Termine Utile (TUP o TUF) trovato nel file.")
 
+
         # --- Sezione 3: Selezione Periodo e Analisi ---
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
@@ -352,7 +329,7 @@ if current_file_to_process is not None:
         aggregation_level = st.radio(
             "Scegli il livello di dettaglio per l'analisi:",
             ('Mensile', 'Giornaliera'), key="aggregation_selector", horizontal=True,
-            help="Scegli 'Giornaliera' per visualizzare i dettagli e il nome del riepilogo WBS." # Help text updated
+            help="Scegli 'Giornaliera' per visualizzare i dettagli e il nome del riepilogo WBS."
         )
 
         # --- Analisi Dettagliate ---
@@ -369,10 +346,10 @@ if current_file_to_process is not None:
                  st.error("Errore: Mappa WBS->Nome non trovata. Ricaricare il file.")
             else:
                 try:
-                    scurve_source = "Stima Aggregata (WBS Bottom-Up)"
-                    st.markdown(f"###### Curva S (Dati: {scurve_source})")
+                    # --- [MODIFICATO v17.8] Titolo Sezione ---
+                    st.markdown(f"###### Analisi Curva S")
 
-                    with st.spinner(f"Calcolo distribuzione costi ({scurve_source})..."):
+                    with st.spinner(f"Calcolo distribuzione costi..."):
                         detailed_daily_cost_df = calculate_daily_distribution_bottom_up(all_tasks_dataframe.copy())
 
                     if detailed_daily_cost_df.empty:
@@ -391,7 +368,7 @@ if current_file_to_process is not None:
                             aggregated_data = pd.DataFrame()
                             display_columns = []
                             plot_custom_data = None
-                            col_summary_name = "Riepilogo WBS" # <<< Nome colonna aggiornato
+                            col_summary_name = "Riepilogo WBS"
 
                             if aggregation_level == 'Mensile':
                                 aggregated_values = filtered_cost.set_index('Date')['Value'].resample('ME').sum().reset_index()
@@ -403,20 +380,17 @@ if current_file_to_process is not None:
                             else: # 'Giornaliera'
                                 aggregated_daily = filtered_cost.groupby('Date').agg(
                                     Value=('Value', 'sum'),
-                                    WBS_List=('WBS', lambda x: list(set(x))) # Aggrega WBS
+                                    WBS_List=('WBS', lambda x: list(set(x)))
                                 ).reset_index()
-
-                                # Trova il nome del RIEPILOGO RILEVANTE per ogni giorno
                                 aggregated_daily[col_summary_name] = aggregated_daily['WBS_List'].apply(
-                                    lambda wbs_list: get_relevant_summary_name(wbs_list, wbs_name_map) # <<< Usa nuova funzione
+                                    lambda wbs_list: get_relevant_summary_name(wbs_list, wbs_name_map)
                                 )
-
                                 aggregated_data = aggregated_daily
                                 aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime('%Y-%m-%d')
                                 axis_title = "Giorno"
                                 col_name = "Costo Giornaliero (€)"
-                                display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', col_summary_name] # Mostra nome riepilogo
-                                plot_custom_data = aggregated_data[col_summary_name] # Passa nome riepilogo al grafico
+                                display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', col_summary_name]
+                                plot_custom_data = aggregated_data[col_summary_name]
 
                             aggregated_data['Costo Cumulato (€)'] = aggregated_data['Value'].cumsum()
 
@@ -434,16 +408,27 @@ if current_file_to_process is not None:
                             hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {aggregation_level}</b>: %{{y:,.2f}}€<extra></extra>'
                             hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<extra></extra>'
                             if aggregation_level == 'Giornaliera':
-                                hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {aggregation_level}</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>' # <<< Etichetta aggiornata
-                                hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>' # <<< Etichetta aggiornata
+                                hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {aggregation_level}</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>'
+                                hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>'
 
                             fig_sil.add_trace(go.Bar(x=aggregated_data['Periodo'], y=aggregated_data['Value'], name=f'Costo {aggregation_level}', customdata=plot_custom_data, hovertemplate=hovertemplate_bar))
                             fig_sil.add_trace(go.Scatter(x=aggregated_data['Periodo'], y=aggregated_data['Costo Cumulato (€)'], name=f'Costo Cumulato', mode='lines+markers', yaxis='y2', customdata=plot_custom_data, hovertemplate=hovertemplate_scatter))
-                            fig_sil.update_layout(title=f'Curva S - Costo {aggregation_level} e Cumulato (Dati {scurve_source})', xaxis_title=axis_title, yaxis=dict(title=f"Costo {aggregation_level} (€)"), yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"), legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01), hovermode="x unified")
+
+                            # --- [MODIFICATO v17.8] Titolo Grafico ---
+                            fig_sil.update_layout(
+                                title=f'Curva S - Costo {aggregation_level} e Cumulato', # Rimosso scurce_source
+                                xaxis_title=axis_title,
+                                yaxis=dict(title=f"Costo {aggregation_level} (€)"),
+                                yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"),
+                                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+                                hovermode="x unified"
+                            )
+                            # --- FINE MODIFICA ---
+
                             st.plotly_chart(fig_sil, use_container_width=True)
 
-                            # --- EXPORT EXCEL ---
-                            # ... (Logica export invariata da v17.4, ma aggiorna nome colonna se giornaliera) ...
+                            # --- EXPORT EXCEL (Invariato da v17.4) ---
+                            # ... (Codice invariato) ...
                             output_sil = BytesIO()
                             df_export = aggregated_data.copy()
                             cols_to_select_excel = []
@@ -455,7 +440,7 @@ if current_file_to_process is not None:
                                 df_export['Date'] = df_export['Date'].dt.strftime('%Y-%m')
                             else: # Giornaliera
                                 cols_to_select_excel = ['Date', 'Value', 'Costo Cumulato (€)', col_summary_name]
-                                rename_map_excel = {'Date': 'Giorno', 'Value': 'Costo Giornaliero (€)', col_summary_name: 'Riepilogo WBS'} # <<< Etichetta aggiornata
+                                rename_map_excel = {'Date': 'Giorno', 'Value': 'Costo Giornaliero (€)', col_summary_name: 'Riepilogo WBS'}
                                 df_export['Date'] = df_export['Date'].dt.strftime('%Y-%m-%d')
                             df_to_write = df_export[cols_to_select_excel]
                             df_to_write = df_to_write.rename(columns=rename_map_excel)
@@ -464,10 +449,11 @@ if current_file_to_process is not None:
                             excel_data_sil = output_sil.getvalue()
                             st.download_button(label=f"Scarica Dati SIL ({aggregation_level})", data=excel_data_sil, file_name=f"dati_sil_{aggregation_level.lower()}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_sil")
 
+
                             # --- DEBUG ---
                             # ... (Debug invariato) ...
                             st.markdown("---")
-                            st.markdown(f"##### Diagnostica Dati Calcolati ({scurve_source})")
+                            st.markdown(f"##### Diagnostica Dati Calcolati") # Titolo semplificato
                             debug_task_count = st.session_state.get('debug_task_count', 0)
                             st.write(f"**Numero attività usate per la distribuzione (filtro WBS Bottom-Up):** {debug_task_count}")
                             debug_total = st.session_state.get('debug_total_cost', 0)
@@ -478,7 +464,7 @@ if current_file_to_process is not None:
                             st.caption("I due totali dovrebbero ora corrispondere se la logica bottom-up è corretta.")
 
                         else:
-                            st.warning(f"Nessun dato di costo ({scurve_source}) trovato nel periodo selezionato.")
+                            st.warning(f"Nessun dato di costo trovato nel periodo selezionato.")
 
                 except Exception as analysis_error:
                     st.error(f"Errore durante l'analisi avanzata: {analysis_error}")
