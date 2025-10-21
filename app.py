@@ -1,4 +1,4 @@
-# --- v15.4 (Ricerca Timephased Globale - Task E Assignment) ---
+# --- v16.0 (Logica Curva S: Stima Lineare Aggregata su WBS) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -11,7 +11,7 @@ import plotly.graph_objects as go # Importa Graph Objects per grafici combinati
 import traceback # Per debug avanzato
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v15.4", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v16.0", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -43,7 +43,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v15.4") # Version updated
+st.markdown("## 🚆 InfraTrack v16.0") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -116,63 +116,88 @@ def format_duration_from_xml(duration_str):
         work_days = total_hours / (minutes_per_day / 60.0); return f"{round(work_days)}g"
     except Exception: return "N/D"
 
-# --- [MODIFICATA v15.4] ESTRAZIONE DATI TIMEPHASED PER CURVA S ---
-@st.cache_data
-def extract_timephased_cost(_xml_tree, _namespaces, cost_type_code):
-    """
-    Estrae i dati di Costo distribuiti nel tempo (Timephased) dall'INTERO albero XML.
-    Cerca in TUTTI i nodi (Task, Assignment, etc.)
+# --- [NUOVA FUNZIONE] HELPER PER WBS ---
+def get_parent_wbs(wbs_string):
+    """Estrae il WBS genitore (es. da '1.2.1' a '1.2')."""
+    if wbs_string is None or "." not in wbs_string:
+        return None
+    # Rimuove l'ultima parte del WBS
+    return wbs_string.rsplit('.', 1)[0]
     
-    - Type "10" = Costo Baseline (Baseline Cost) -> Si trova dentro <Baseline>
-    - Type "3"  = Costo (Cost = Actual + Remaining) -> Si trova fuori da <Baseline>
+# --- [RE-INTRODOTTA] FUNZIONE PER CALCOLARE SIL (Logica WBS) ---
+@st.cache_data
+def calculate_linear_distribution(_tasks_dataframe):
+    """
+    Calcola la distribuzione giornaliera dei costi (Stima Lineare)
+    leggendo il Costo TOTALE e le date Start/Finish.
+    Usa la logica WBS per evitare doppio conteggio di Task di Riepilogo.
     """
     daily_cost_data = []
     
-    # Definisce l'XPath (percorso di ricerca)
-    target_xpath = ""
-    if cost_type_code == "10":
-        # Cerca Type "10" (Baseline Cost) ovunque sia in un nodo <Baseline>
-        target_xpath = ".//msp:Baseline/msp:TimephasedData[msp:Type='10']"
-    elif cost_type_code == "3":
-        # Cerca Type "3" (Cost) ovunque sia un figlio di <Task> o <Assignment>
-        # (L'XML di Project li mette lì, non in <Baseline>)
-        
-        # 1. Cerca in tutti i Task
-        nodes = _xml_tree.findall('.//msp:Task/msp:TimephasedData[msp:Type="3"]', namespaces=_namespaces)
-        # 2. Cerca in tutte le Assignment
-        nodes.extend(_xml_tree.findall('.//msp:Assignment/msp:TimephasedData[msp:Type="3"]', namespaces=_namespaces))
+    # Copia per sicurezza cache
+    tasks_dataframe = _tasks_dataframe.copy()
     
-    else:
-        nodes = [] # Tipo non supportato
+    tasks_dataframe['Start'] = pd.to_datetime(tasks_dataframe['Start'], errors='coerce').dt.date
+    tasks_dataframe['Finish'] = pd.to_datetime(tasks_dataframe['Finish'], errors='coerce').dt.date
+    
+    # --- FILTRO CHIAVE (Anti-Doppio-Conteggio basato su WBS) ---
+    
+    # 1. Rimuovi attività senza date valide o costo
+    filtered_tasks_dataframe = tasks_dataframe.dropna(subset=['Start', 'Finish', 'Cost', 'WBS'])
+    
+    # 2. Considera solo attività con costo > 0
+    filtered_tasks_dataframe = filtered_tasks_dataframe[filtered_tasks_dataframe['Cost'] > 0]
+    
+    # 3. Identifica i WBS di *tutte* le attività che hanno un costo
+    cost_wbs_string_set = set(filtered_tasks_dataframe['WBS'].dropna().astype(str))
+    
+    # 4. Trova il WBS genitore per ogni attività
+    filtered_tasks_dataframe['Parent_WBS'] = filtered_tasks_dataframe['WBS'].astype(str).apply(get_parent_wbs)
+    
+    # 5. Controlla se il genitore è *anch'esso* nel set di attività con costo
+    filtered_tasks_dataframe['Parent_Has_Cost'] = filtered_tasks_dataframe['Parent_WBS'].isin(cost_wbs_string_set)
+    
+    # 6. Il dataframe finale da distribuire contiene SOLO le attività
+    #    il cui genitore NON ha un costo.
+    tasks_to_distribute = filtered_tasks_dataframe[filtered_tasks_dataframe['Parent_Has_Cost'] == False]
+    # --- FINE FILTRO ---
 
-    # Se stiamo cercando la Baseline (10), eseguiamo la ricerca globale
-    if cost_type_code == "10":
-        nodes = _xml_tree.findall(target_xpath, namespaces=_namespaces)
+    # Salvataggio dati per il debug
+    st.session_state['debug_task_count'] = len(tasks_to_distribute) 
+    st.session_state['debug_total_cost'] = tasks_to_distribute['Cost'].sum() 
 
-    # st.toast(f"Trovati {len(nodes)} nodi per Type={cost_type_code}") # (Utile per debug)
-
-    for node in nodes:
-        start_date_str = node.findtext('msp:Start', namespaces=_namespaces)
-        value_str = node.findtext('msp:Value', namespaces=_namespaces)
+    # Loop solo sulle attività filtrate correttamente
+    for _, task in tasks_to_distribute.iterrows():
+        start_date = task['Start']
+        finish_date = task['Finish']
+        total_cost = task['Cost']
         
-        if start_date_str and value_str:
-            try:
-                current_date = datetime.fromisoformat(start_date_str).date()
-                cost_value = float(value_str) / 100.0 # Costo in centesimi
-                
-                if cost_value > 0:
-                    daily_cost_data.append({'Date': current_date, 'Value': cost_value})
-            except Exception:
-                pass # Ignora nodi malformati
+        duration_days = (finish_date - start_date).days
+        
+        if duration_days < 0: 
+            continue 
+        
+        number_of_days_in_period = duration_days + 1
+        
+        if number_of_days_in_period <= 0:
+             value_per_day = total_cost 
+             number_of_days_in_period = 1
+        else:
+             value_per_day = total_cost / number_of_days_in_period
+        
+        for i in range(number_of_days_in_period):
+            current_date = start_date + timedelta(days=i)
+            daily_cost_data.append({'Date': current_date, 'Value': value_per_day})
 
     if not daily_cost_data:
         return pd.DataFrame(columns=['Date', 'Value'])
 
-    daily_df = pd.DataFrame(daily_cost_data)
-    daily_df['Date'] = pd.to_datetime(daily_df['Date'])
-    aggregated_daily_df = daily_df.groupby('Date')['Value'].sum().reset_index()
+    # Aggregazione finale
+    daily_dataframe = pd.DataFrame(daily_cost_data)
+    daily_dataframe['Date'] = pd.to_datetime(daily_dataframe['Date'])
+    aggregated_daily_dataframe = daily_dataframe.groupby('Date')['Value'].sum().reset_index()
     
-    return aggregated_daily_df
+    return aggregated_daily_dataframe
 # --- FINE FUNZIONE ---
 
 
@@ -214,13 +239,16 @@ if current_file_to_process is not None:
                 tup_tuf_pattern = re.compile(r'(?i)(TUP|TUF)\s*\d*'); all_tasks_data_list = []
 
                 for task in all_tasks:
-                    # ... (Loop TUP/TUF e Task invariato) ...
+                    # ... (Loop TUP/TUF e Task invariato, estraiamo tutti i dati) ...
                     uid = task.findtext('msp:UID', namespaces=ns); name = task.findtext('msp:Name', namespaces=ns) or "";
                     start_str = task.findtext('msp:Start', namespaces=ns); finish_str = task.findtext('msp:Finish', namespaces=ns);
                     start_date = datetime.fromisoformat(start_str).date() if start_str else None; finish_date = datetime.fromisoformat(finish_str).date() if finish_str else None
                     duration_str = task.findtext('msp:Duration', namespaces=ns); cost_str = task.findtext('msp:Cost', namespaces=ns) or "0"
                     duration_formatted = format_duration_from_xml(duration_str)
+                    
+                    # Costo totale (da <Cost>)
                     cost_euros = float(cost_str) / 100.0 if cost_str else 0.0
+                    
                     is_milestone_text = (task.findtext('msp:Milestone', namespaces=ns) or '0').lower(); is_milestone = is_milestone_text == '1' or is_milestone_text == 'true'
                     wbs = task.findtext('msp:WBS', namespaces=ns) or ""
                     total_slack_minutes_str = task.findtext('msp:TotalSlack', namespaces=ns) or "0"
@@ -233,9 +261,13 @@ if current_file_to_process is not None:
                             mpd = st.session_state.get('minutes_per_day', 480)
                             if mpd > 0: total_slack_days = math.ceil(slack_minutes / mpd)
                         except ValueError: total_slack_days = 0
+                        
                     if uid != '0':
+                        # Aggiungiamo il task al dataframe che useremo per la stima lineare
                         all_tasks_data_list.append({"UID": uid, "Name": name, "Start": start_date, "Finish": finish_date, "Duration": duration_formatted, "Cost": cost_euros, 
                                                     "Milestone": is_milestone, "Summary": is_summary, "WBS": wbs, "TotalSlackDays": total_slack_days})
+                    
+                    # Logica TUP/TUF (invariata)
                     match = tup_tuf_pattern.search(name)
                     if match:
                         tup_tuf_key = match.group(0).upper().strip(); duration_str_tup = task.findtext('msp:Duration', namespaces=ns)
@@ -274,28 +306,15 @@ if current_file_to_process is not None:
                     st.session_state['df_milestones_display'] = df_milestones.drop(columns=['DataInizioObj'])
                 else: st.session_state['df_milestones_display'] = None
 
-                # Salvataggio TUTTE le attività (invariato)
+                # --- [MODIFICATO] SALVATAGGIO DATI PER CURVA S ---
+                # Salviamo il dataframe completo, la funzione di stima lineare (@st.cache_data)
+                # verrà chiamata solo al click del bottone "Avvia Analisi"
                 st.session_state['all_tasks_data'] = pd.DataFrame(all_tasks_data_list)
                 
-                # --- CALCOLO DATI CURVA S (Logica Fallback invariata, ma funzione corretta) ---
-                
-                # 1. Tenta di estrarre il Costo Baseline (Type 10)
-                scurve_data = extract_timephased_cost(tree, ns, cost_type_code="10")
-                scurve_source = "Baseline (Type 10)" 
-                
-                # 2. Se fallisce, tenta di estrarre il Costo Totale (Type 3)
-                if scurve_data.empty:
-                    st.session_state['fallback_warning'] = "Dati 'Costo Baseline' (Type 10) non trovati. Utilizzo i dati 'Costo' (Type 3 = Effettivo + Rimanente)."
-                    scurve_data = extract_timephased_cost(tree, ns, cost_type_code="3")
-                    scurve_source = "Costo (Type 3)"
-                else:
-                    st.session_state['fallback_warning'] = None
-                
-                # 3. Salva i dati trovati
-                st.session_state['scurve_data'] = scurve_data
-                st.session_state['scurve_source'] = scurve_source 
-                st.session_state['debug_timephased_total_cost'] = scurve_data['Value'].sum() if not scurve_data.empty else 0
-                
+                # Rimuoviamo i vecchi dati timephased (v15) se esistono
+                if 'scurve_data' in st.session_state: del st.session_state['scurve_data']
+                if 'scurve_source' in st.session_state: del st.session_state['scurve_source']
+
                 
                 # Debug
                 current_file_to_process.seek(0); debug_content_bytes = current_file_to_process.read(2000);
@@ -316,10 +335,6 @@ if current_file_to_process is not None:
 
     # --- VISUALIZZAZIONE DATI E ANALISI AVANZATA ---
     if st.session_state.get('file_processed_success', False):
-    
-        fallback_warning = st.session_state.get('fallback_warning')
-        if fallback_warning:
-            st.warning(fallback_warning)
             
         # --- Sezione 2: Analisi Preliminare (Invariata) ---
         st.markdown("---"); st.markdown("#### 2. Analisi Preliminare"); st.markdown("##### 📄 Informazioni Generali dell'Appalto")
@@ -355,64 +370,75 @@ if current_file_to_process is not None:
         
         if st.button("📈 Avvia Analisi Curva S", key="analyze_scurve"):
             
-            daily_cost_df = st.session_state.get('scurve_data')
-            scurve_source = st.session_state.get('scurve_source', 'N/D') 
+            # Recupera il dataframe COMPLETO delle attività dalla sessione
+            all_tasks_dataframe = st.session_state.get('all_tasks_data')
             
-            if daily_cost_df is None or daily_cost_df.empty:
-                st.error("Errore: Nessun dato 'Timephased' (Type 10 o Type 3) trovato nel file XML.")
-                st.warning("Impossibile calcolare la Curva S. Assicurati che il progetto abbia costi assegnati (nella Baseline o nella colonna Costo).")
+            if all_tasks_dataframe is None or all_tasks_dataframe.empty:
+                st.error("Errore: Dati delle attività non trovati. Impossibile calcolare la Curva S.")
             else:
                 try:
-                    st.markdown(f"###### Curva S (Dati Timephased: {scurve_source})")
+                    scurve_source = "Stima Lineare (WBS)"
+                    st.markdown(f"###### Curva S (Dati: {scurve_source})")
                     
-                    with st.spinner(f"Aggregazione dati Curva S ({scurve_source})..."):
+                    with st.spinner(f"Calcolo distribuzione costi ({scurve_source})..."):
+                        # Usa la funzione di stima lineare (v14.1)
+                        daily_cost_df = calculate_linear_distribution(all_tasks_dataframe.copy()) # Passa una copia
+                    
+                    if daily_cost_df.empty:
+                        st.error("Errore: Nessun costo trovato nelle attività del file XML.")
+                        st.warning("Impossibile calcolare la Curva S. Assicurati che il progetto abbia costi assegnati (nella colonna Costo).")
+                        
+                    else:
                         selected_start_dt = datetime.combine(selected_start_date, datetime.min.time())
                         selected_finish_dt = datetime.combine(selected_finish_date, datetime.max.time())
                         
                         mask_cost = (daily_cost_df['Date'] >= selected_start_dt) & (daily_cost_df['Date'] <= selected_finish_dt)
                         filtered_cost = daily_cost_df.loc[mask_cost]
                         
-                    if not filtered_cost.empty:
-                        monthly_cost = filtered_cost.set_index('Date').resample('ME')['Value'].sum().reset_index()
-                        monthly_cost['Costo Cumulato (€)'] = monthly_cost['Value'].cumsum()
-                        monthly_cost['Mese'] = monthly_cost['Date'].dt.strftime('%Y-%m')
-                        
-                        st.markdown(f"###### Tabella Dati SIL Mensili ({scurve_source})")
-                        df_display_sil = monthly_cost.copy()
-                        df_display_sil['Costo Mensile (€)'] = df_display_sil['Value'].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                        df_display_sil['Costo Cumulato (€)'] = df_display_sil['Costo Cumulato (€)'].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                        st.dataframe(df_display_sil[['Mese', 'Costo Mensile (€)', 'Costo Cumulato (€)']], use_container_width=True, hide_index=True)
-                        
-                        st.markdown(f"###### Grafico Curva S ({scurve_source})")
-                        fig_sil = go.Figure()
-                        fig_sil.add_trace(go.Bar(x=monthly_cost['Mese'], y=monthly_cost['Value'], name=f'Costo Mensile ({scurve_source})'))
-                        fig_sil.add_trace(go.Scatter(x=monthly_cost['Mese'], y=monthly_cost['Costo Cumulato (€)'], name=f'Costo Cumulato ({scurve_source})', mode='lines+markers', yaxis='y2'))
-                        fig_sil.update_layout(
-                            title=f'Curva S - Costo Mensile e Cumulato (Dati {scurve_source})',
-                            xaxis_title="Mese",
-                            yaxis=dict(title="Costo Mensile (€)"),
-                            yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"),
-                            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
-                        )
-                        st.plotly_chart(fig_sil, use_container_width=True)
-                        
-                        output_sil = BytesIO()
-                        with pd.ExcelWriter(output_sil, engine='openpyxl') as writer:
-                            monthly_cost[['Mese', 'Value', 'Costo Cumulato (€)']].rename(columns={'Value': 'Costo Mensile (€)'}).to_excel(writer, index=False, sheet_name='SIL_Mensile')
-                        excel_data_sil = output_sil.getvalue()
-                        st.download_button(label="Scarica Dati SIL (Excel)", data=excel_data_sil, file_name="dati_sil_mensile.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_sil")
+                        if not filtered_cost.empty:
+                            monthly_cost = filtered_cost.set_index('Date').resample('ME')['Value'].sum().reset_index()
+                            monthly_cost['Costo Cumulato (€)'] = monthly_cost['Value'].cumsum()
+                            monthly_cost['Mese'] = monthly_cost['Date'].dt.strftime('%Y-%m')
+                            
+                            st.markdown(f"###### Tabella Dati SIL Mensili ({scurve_source})")
+                            df_display_sil = monthly_cost.copy()
+                            df_display_sil['Costo Mensile (€)'] = df_display_sil['Value'].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                            df_display_sil['Costo Cumulato (€)'] = df_display_sil['Costo Cumulato (€)'].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                            st.dataframe(df_display_sil[['Mese', 'Costo Mensile (€)', 'Costo Cumulato (€)']], use_container_width=True, hide_index=True)
+                            
+                            st.markdown(f"###### Grafico Curva S ({scurve_source})")
+                            fig_sil = go.Figure()
+                            fig_sil.add_trace(go.Bar(x=monthly_cost['Mese'], y=monthly_cost['Value'], name=f'Costo Mensile ({scurve_source})'))
+                            fig_sil.add_trace(go.Scatter(x=monthly_cost['Mese'], y=monthly_cost['Costo Cumulato (€)'], name=f'Costo Cumulato ({scurve_source})', mode='lines+markers', yaxis='y2'))
+                            fig_sil.update_layout(
+                                title=f'Curva S - Costo Mensile e Cumulato (Dati {scurve_source})',
+                                xaxis_title="Mese",
+                                yaxis=dict(title="Costo Mensile (€)"),
+                                yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"),
+                                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+                            )
+                            st.plotly_chart(fig_sil, use_container_width=True)
+                            
+                            output_sil = BytesIO()
+                            with pd.ExcelWriter(output_sil, engine='openpyxl') as writer:
+                                monthly_cost[['Mese', 'Value', 'Costo Cumulato (€)']].rename(columns={'Value': 'Costo Mensile (€)'}).to_excel(writer, index=False, sheet_name='SIL_Mensile')
+                            excel_data_sil = output_sil.getvalue()
+                            st.download_button(label="Scarica Dati SIL (Excel)", data=excel_data_sil, file_name="dati_sil_mensile.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_sil")
 
-                        # DEBUG SUL COSTO TOTALE
-                        st.markdown("---")
-                        st.markdown(f"##### Diagnostica Dati Calcolati ({scurve_source})")
-                        
-                        debug_total = st.session_state.get('debug_timephased_total_cost', 0)
-                        formatted_debug_cost = f"€ {debug_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                        st.write(f"**Costo Totale Calcolato (somma dati {scurve_source}):** {formatted_debug_cost}")
-                        st.caption(f"Questo totale è la somma di tutti i costi '{scurve_source}' distribuiti nel tempo trovati nell'XML.")
+                            # DEBUG SUL COSTO TOTALE
+                            st.markdown("---")
+                            st.markdown(f"##### Diagnostica Dati Calcolati ({scurve_source})")
+                            
+                            debug_task_count = st.session_state.get('debug_task_count', 0)
+                            st.write(f"**Numero attività usate per la distribuzione (filtro WBS):** {debug_task_count}")
+                            
+                            debug_total = st.session_state.get('debug_total_cost', 0)
+                            formatted_debug_cost = f"€ {debug_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                            st.write(f"**Costo Totale Calcolato (somma attività WBS valide):** {formatted_debug_cost}")
+                            st.caption(f"Questo totale è la somma dei tag <Cost> delle attività filtrate (logica WBS). Dovrebbe corrispondere al costo totale del progetto.")
 
-                    else:
-                        st.warning(f"Nessun dato di costo ({scurve_source}) trovato nel periodo selezionato.")
+                        else:
+                            st.warning(f"Nessun dato di costo ({scurve_source}) trovato nel periodo selezionato.")
                 
                 except Exception as analysis_error:
                     st.error(f"Errore durante l'analisi avanzata: {analysis_error}")
