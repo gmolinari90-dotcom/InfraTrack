@@ -1,4 +1,4 @@
-# --- v18.2 (Correzione Finale SyntaxError) ---
+# --- v18.3 (Correzione Finale SyntaxError) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -29,12 +29,11 @@ except locale.Error:
         try: locale.setlocale(locale.LC_TIME, '')
         except locale.Error:
              if not _locale_warning_shown:
-                #st.warning("Impossibile impostare qualsiasi locale per i nomi dei mesi.")
-                print("WARNING: Impossibile impostare qualsiasi locale per i nomi dei mesi.") # Meno invasivo
+                print("WARNING: Impossibile impostare qualsiasi locale per i nomi dei mesi.")
                 _locale_warning_shown = True
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v18.2", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v18.3", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 # ... (CSS invariato v17.12) ...
@@ -61,7 +60,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v18.2") # Version updated
+st.markdown("## 🚆 InfraTrack v18.3") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -421,11 +420,10 @@ if current_file_to_process is not None:
                                     date_format_display = '%d/%m/%Y'; date_format_excel = '%d/%m/%Y'
                                     aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime(date_format_display)
                                     axis_title = "Giorno"; col_name = "Costo Giornaliero (€)"
-                                    # --- [CORREZIONE v18.2] Rimuove 'else:' superfluo ---
-                                    display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', col_summary_name]
+                                    display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', col_summary_name] #<<< CORRETTO
                                     plot_custom_data = aggregated_data[col_summary_name]
                                     excel_filename = "Dati_SIL_Giornalieri.xlsx"
-                                # --- FINE CORREZIONE ---
+
 
                                 aggregated_data['Costo Cumulato (€)'] = aggregated_data['Value'].cumsum()
 
