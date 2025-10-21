@@ -1,4 +1,4 @@
-# --- v15.2 (Correzione KeyError 'DataIn_Obj') ---
+# --- v15.3 (Logica Fallback: Cerca Type 10, se fallisce Cerca Type 3) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -11,7 +11,7 @@ import plotly.graph_objects as go # Importa Graph Objects per grafici combinati
 import traceback # Per debug avanzato
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v15.2", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v15.3", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -43,7 +43,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v15.2") # Version updated
+st.markdown("## 🚆 InfraTrack v15.3") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -114,21 +114,31 @@ def format_duration_from_xml(duration_str):
         work_days = total_hours / (minutes_per_day / 60.0); return f"{round(work_days)}g"
     except Exception: return "N/D"
 
-# --- ESTRAZIONE DATI TIMEPHASED PER CURVA S ---
+# --- [MODIFICATA] ESTRAZIONE DATI TIMEPHASED PER CURVA S ---
 @st.cache_data
-def extract_timephased_baseline_cost(_xml_tree, _namespaces):
+def extract_timephased_cost(_xml_tree, _namespaces, cost_type_code):
     """
-    Estrae i dati di Costo Baseline (Type=10) distribuiti nel tempo (Timephased)
-    dalle Assegnazioni (Assignments) per costruire la Curva S.
+    Estrae i dati di Costo distribuiti nel tempo (Timephased) dalle Assegnazioni (Assignments)
+    in base al 'cost_type_code' fornito.
+    - Type "10" = Costo Baseline (Baseline Cost)
+    - Type "3"  = Costo (Cost = Actual + Remaining)
     """
     daily_cost_data = []
     assignments = _xml_tree.findall('.//msp:Assignment', namespaces=_namespaces)
     
+    # Costruisci l'XPath dinamicamente
+    xpath_baseline = f'.//msp:Baseline/msp:TimephasedData[msp:Type="{cost_type_code}"]'
+    xpath_non_baseline = f'./msp:TimephasedData[msp:Type="{cost_type_code}"]'
+    
     for ass in assignments:
-        timephased_nodes = ass.findall(
-            './/msp:Baseline/msp:TimephasedData[msp:Type="10"]', 
-            namespaces=_namespaces
-        )
+        timephased_nodes = []
+        
+        if cost_type_code == "10":
+            # I dati Baseline (10) sono dentro un nodo <Baseline>
+            timephased_nodes = ass.findall(xpath_baseline, namespaces=_namespaces)
+        else:
+            # I dati Costo (3) sono figli diretti di <Assignment>
+            timephased_nodes = ass.findall(xpath_non_baseline, namespaces=_namespaces)
 
         for node in timephased_nodes:
             start_date_str = node.findtext('msp:Start', namespaces=_namespaces)
@@ -142,7 +152,7 @@ def extract_timephased_baseline_cost(_xml_tree, _namespaces):
                     if cost_value > 0:
                         daily_cost_data.append({'Date': current_date, 'Value': cost_value})
                 except Exception:
-                    pass 
+                    pass # Ignora nodi malformati
 
     if not daily_cost_data:
         return pd.DataFrame(columns=['Date', 'Value'])
@@ -253,21 +263,31 @@ if current_file_to_process is not None:
                     min_date_for_sort = date.min
                     df_milestones['DataInizioObj'] = pd.to_datetime(df_milestones['DataInizioObj'], errors='coerce').dt.date
                     df_milestones['DataInizioObj'] = df_milestones['DataInizioObj'].fillna(min_date_for_sort)
-                    
-                    # --- [CORREZIONE] da "DataIn_Obj" a "DataInizioObj" ---
                     df_milestones = df_milestones.sort_values(by="DataInizioObj").reset_index(drop=True)
-                    # --- FINE CORREZIONE ---
-                    
                     st.session_state['df_milestones_display'] = df_milestones.drop(columns=['DataInizioObj'])
                 else: st.session_state['df_milestones_display'] = None
 
                 # Salvataggio TUTTE le attività (invariato)
                 st.session_state['all_tasks_data'] = pd.DataFrame(all_tasks_data_list)
                 
-                # CALCOLO DATI CURVA S (TIMEPHASED)
-                scurve_baseline_data = extract_timephased_baseline_cost(tree, ns)
-                st.session_state['scurve_baseline_data'] = scurve_baseline_data
-                st.session_state['debug_timephased_total_cost'] = scurve_baseline_data['Value'].sum() if not scurve_baseline_data.empty else 0
+                # --- [MODIFICATO] CALCOLO DATI CURVA S (con Fallback) ---
+                
+                # 1. Tenta di estrarre il Costo Baseline (Type 10)
+                scurve_data = extract_timephased_cost(tree, ns, cost_type_code="10")
+                scurve_source = "Baseline (Type 10)" # Fonte dati
+                
+                # 2. Se fallisce, tenta di estrarre il Costo Totale (Type 3)
+                if scurve_data.empty:
+                    st.session_state['fallback_warning'] = "Dati 'Costo Baseline' (Type 10) non trovati. Utilizzo i dati 'Costo' (Type 3 = Effettivo + Rimanente)."
+                    scurve_data = extract_timephased_cost(tree, ns, cost_type_code="3")
+                    scurve_source = "Costo (Type 3)"
+                else:
+                    st.session_state['fallback_warning'] = None
+                
+                # 3. Salva i dati trovati (o un DF vuoto se fallisce anche il fallback)
+                st.session_state['scurve_data'] = scurve_data
+                st.session_state['scurve_source'] = scurve_source # Salva la fonte
+                st.session_state['debug_timephased_total_cost'] = scurve_data['Value'].sum() if not scurve_data.empty else 0
                 
                 
                 # Debug
@@ -289,6 +309,12 @@ if current_file_to_process is not None:
 
     # --- VISUALIZZAZIONE DATI E ANALISI AVANZATA ---
     if st.session_state.get('file_processed_success', False):
+    
+        # Mostra l'avviso di fallback se esiste
+        fallback_warning = st.session_state.get('fallback_warning')
+        if fallback_warning:
+            st.warning(fallback_warning)
+            
         # --- Sezione 2: Analisi Preliminare (Invariata) ---
         st.markdown("---"); st.markdown("#### 2. Analisi Preliminare"); st.markdown("##### 📄 Informazioni Generali dell'Appalto")
         project_name = st.session_state.get('project_name', "N/D"); formatted_cost = st.session_state.get('formatted_cost', "N/D")
@@ -323,16 +349,19 @@ if current_file_to_process is not None:
         
         if st.button("📈 Avvia Analisi Curva S", key="analyze_scurve"):
             
-            daily_cost_df = st.session_state.get('scurve_baseline_data')
+            # Recupera i dati (Baseline o Costo) e la fonte
+            daily_cost_df = st.session_state.get('scurve_data')
+            scurve_source = st.session_state.get('scurve_source', 'N/D') # Es: "Baseline (Type 10)"
             
             if daily_cost_df is None or daily_cost_df.empty:
-                st.error("Errore: Dati 'Timephased' (Costo Baseline) non trovati nel file XML. Impossibile calcolare la Curva S.")
-                st.warning("Assicurati che il progetto abbia una Baseline salvata (Salva Baseline) e che contenga costi assegnati.")
+                st.error("Errore: Nessun dato 'Timephased' trovato nel file XML.")
+                st.warning("Impossibile calcolare la Curva S. Assicurati che il progetto abbia costi assegnati (nella Baseline o nella colonna Costo).")
             else:
                 try:
-                    st.markdown("###### Curva S (Costo Cumulato - Dati Baseline Timephased)")
+                    # Titolo dinamico basato sulla fonte dati
+                    st.markdown(f"###### Curva S (Dati Timephased: {scurve_source})")
                     
-                    with st.spinner("Aggregazione dati Curva S..."):
+                    with st.spinner(f"Aggregazione dati Curva S ({scurve_source})..."):
                         selected_start_dt = datetime.combine(selected_start_date, datetime.min.time())
                         selected_finish_dt = datetime.combine(selected_finish_date, datetime.max.time())
                         
@@ -344,18 +373,18 @@ if current_file_to_process is not None:
                         monthly_cost['Costo Cumulato (€)'] = monthly_cost['Value'].cumsum()
                         monthly_cost['Mese'] = monthly_cost['Date'].dt.strftime('%Y-%m')
                         
-                        st.markdown("###### Tabella Dati SIL Mensili Aggregati")
+                        st.markdown(f"###### Tabella Dati SIL Mensili ({scurve_source})")
                         df_display_sil = monthly_cost.copy()
                         df_display_sil['Costo Mensile (€)'] = df_display_sil['Value'].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
                         df_display_sil['Costo Cumulato (€)'] = df_display_sil['Costo Cumulato (€)'].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
                         st.dataframe(df_display_sil[['Mese', 'Costo Mensile (€)', 'Costo Cumulato (€)']], use_container_width=True, hide_index=True)
                         
-                        st.markdown("###### Grafico Curva S (Baseline)")
+                        st.markdown(f"###### Grafico Curva S ({scurve_source})")
                         fig_sil = go.Figure()
-                        fig_sil.add_trace(go.Bar(x=monthly_cost['Mese'], y=monthly_cost['Value'], name='Costo Mensile (Baseline)'))
-                        fig_sil.add_trace(go.Scatter(x=monthly_cost['Mese'], y=monthly_cost['Costo Cumulato (€)'], name='Costo Cumulato (Baseline)', mode='lines+markers', yaxis='y2'))
+                        fig_sil.add_trace(go.Bar(x=monthly_cost['Mese'], y=monthly_cost['Value'], name=f'Costo Mensile ({scurve_source})'))
+                        fig_sil.add_trace(go.Scatter(x=monthly_cost['Mese'], y=monthly_cost['Costo Cumulato (€)'], name=f'Costo Cumulato ({scurve_source})', mode='lines+markers', yaxis='y2'))
                         fig_sil.update_layout(
-                            title='Curva S - Costo Mensile e Cumulato (Baseline Timephased)',
+                            title=f'Curva S - Costo Mensile e Cumulato (Dati {scurve_source})',
                             xaxis_title="Mese",
                             yaxis=dict(title="Costo Mensile (€)"),
                             yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"),
@@ -365,21 +394,21 @@ if current_file_to_process is not None:
                         
                         output_sil = BytesIO()
                         with pd.ExcelWriter(output_sil, engine='openpyxl') as writer:
-                            monthly_cost[['Mese', 'Value', 'Costo Mensile (€)']].rename(columns={'Value': 'Costo Mensile (€)'}).to_excel(writer, index=False, sheet_name='SIL_Mensile')
+                            monthly_cost[['Mese', 'Value', 'Costo Cumulato (€)']].rename(columns={'Value': 'Costo Mensile (€)'}).to_excel(writer, index=False, sheet_name='SIL_Mensile')
                         excel_data_sil = output_sil.getvalue()
                         st.download_button(label="Scarica Dati SIL (Excel)", data=excel_data_sil, file_name="dati_sil_mensile.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_sil")
 
                         # DEBUG SUL COSTO TOTALE
                         st.markdown("---")
-                        st.markdown("##### Diagnostica Dati Calcolati (Timephased)")
+                        st.markdown(f"##### Diagnostica Dati Calcolati ({scurve_source})")
                         
                         debug_total = st.session_state.get('debug_timephased_total_cost', 0)
                         formatted_debug_cost = f"€ {debug_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                        st.write(f"**Costo Totale Calcolato (somma dati Timephased Baseline):** {formatted_debug_cost}")
-                        st.caption(f"Questo totale è la somma di tutti i costi di baseline distribuiti nel tempo (Type 10) trovati nelle assegnazioni. Dovrebbe corrispondere al costo di Baseline totale del progetto.")
+                        st.write(f"**Costo Totale Calcolato (somma dati {scurve_source}):** {formatted_debug_cost}")
+                        st.caption(f"Questo totale è la somma di tutti i costi '{scurve_source}' distribuiti nel tempo trovati nelle assegnazioni.")
 
                     else:
-                        st.warning("Nessun costo di Baseline trovato nel periodo selezionato.")
+                        st.warning(f"Nessun dato di costo ({scurve_source}) trovato nel periodo selezionato.")
                 
                 except Exception as analysis_error:
                     st.error(f"Errore durante l'analisi avanzata: {analysis_error}")
