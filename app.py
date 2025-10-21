@@ -1,4 +1,4 @@
-# --- v18.1 (Correzione SyntaxError riga 535) ---
+# --- v18.2 (Correzione SyntaxError riga 509) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -33,7 +33,7 @@ except locale.Error:
                 _locale_warning_shown = True
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v18.1", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v18.2", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 # ... (CSS invariato v17.12) ...
@@ -60,7 +60,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v18.1") # Version updated
+st.markdown("## 🚆 InfraTrack v18.2") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -328,6 +328,7 @@ if current_file_to_process is not None:
         st.markdown("##### 📦 Seleziona Aggregazione Dati")
         aggregation_level = st.radio("Scegli il livello di dettaglio per l'analisi:", ('Mensile', 'Giornaliera'), key="aggregation_selector", horizontal=True, help="Scegli 'Giornaliera' per visualizzare i dettagli e il nome del riepilogo WBS.")
 
+
         # --- Analisi Dettagliate ---
         st.markdown("---"); st.markdown("##### 📊 Analisi Dettagliate")
 
@@ -409,7 +410,7 @@ if current_file_to_process is not None:
                                     aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime(date_format_display).str.capitalize()
                                     axis_title = "Mese"; col_name = "Costo Mensile (€)"
                                     display_columns = ['Periodo', col_name, 'Costo Cumulato (€)']
-                                    excel_filename = "Dati_SIL_Mensili.xlsx" # Nome file aggiornato
+                                    excel_filename = "Dati_SIL_Mensili.xlsx"
                                 else: # 'Giornaliera'
                                     aggregated_daily = filtered_cost.copy()
                                     aggregated_daily[col_summary_name] = aggregated_daily['WBS_List'].apply(
@@ -419,13 +420,16 @@ if current_file_to_process is not None:
                                     date_format_display = '%d/%m/%Y'; date_format_excel = '%d/%m/%Y'
                                     aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime(date_format_display)
                                     axis_title = "Giorno"; col_name = "Costo Giornaliero (€)"
+                                    # --- [CORREZIONE v18.1] Rimosso else superfluo ---
                                     display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', col_summary_name]
                                     plot_custom_data = aggregated_data[col_summary_name]
-                                    excel_filename = "Dati_SIL_Giornalieri.xlsx" # Nome file aggiornato
+                                    excel_filename = "Dati_SIL_Giornalieri.xlsx"
+                                # --- FINE CORREZIONE ---
 
                                 aggregated_data['Costo Cumulato (€)'] = aggregated_data['Value'].cumsum()
 
                                 # --- VISUALIZZAZIONE ---
+                                # ... (Codice visualizzazione tabella e grafico invariato da v17.11) ...
                                 st.markdown(f"###### Tabella Dati SIL Aggregati ({aggregation_level})")
                                 df_display_sil = aggregated_data.copy()
                                 df_display_sil.rename(columns={'Value': col_name}, inplace=True)
@@ -442,22 +446,11 @@ if current_file_to_process is not None:
                                     hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>'
                                 fig_sil.add_trace(go.Bar(x=aggregated_data['Periodo'], y=aggregated_data['Value'], name=f'Costo {aggregation_level}', customdata=plot_custom_data, hovertemplate=hovertemplate_bar))
                                 fig_sil.add_trace(go.Scatter(x=aggregated_data['Periodo'], y=aggregated_data['Costo Cumulato (€)'], name=f'Costo Cumulato', mode='lines+markers', yaxis='y2', customdata=plot_custom_data, hovertemplate=hovertemplate_scatter))
-
-                                # --- [MODIFICATO v17.15] Imposta template qui ---
-                                fig_sil.update_layout(
-                                    title=f'Curva S - Costo {aggregation_level.replace("a", "o")} e Cumulato',
-                                    xaxis_title=axis_title,
-                                    yaxis=dict(title=f"Costo {aggregation_level.replace('a', 'o')} (€)"),
-                                    yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"),
-                                    legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
-                                    hovermode="x unified",
-                                    template="plotly" # <<< Forza template colori
-                                )
-                                # --- FINE MODIFICA ---
+                                fig_sil.update_layout(title=f'Curva S - Costo {aggregation_level.replace("a", "o")} e Cumulato', xaxis_title=axis_title, yaxis=dict(title=f"Costo {aggregation_level.replace('a', 'o')} (€)"), yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"), legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01), hovermode="x unified", template="plotly")
                                 st.plotly_chart(fig_sil, use_container_width=True)
 
                                 # --- EXPORT EXCEL ---
-                                # ... (Codice export invariato da v17.13, usa excel_filename) ...
+                                # ... (Codice export excel invariato da v17.13, usa excel_filename) ...
                                 output_sil = BytesIO()
                                 df_export = aggregated_data.copy()
                                 cols_to_select_excel = []
