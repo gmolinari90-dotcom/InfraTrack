@@ -1,4 +1,4 @@
-# --- v15.0 (Logica Curva S CORRETTA - Dati Timephased) ---
+# --- v15.1 (Correzione NameError 'et', Aggiunto Svuota Cache) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -11,7 +11,7 @@ import plotly.graph_objects as go # Importa Graph Objects per grafici combinati
 import traceback # Per debug avanzato
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v15.0", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v15.1", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -22,8 +22,18 @@ st.markdown("""
     .stApp .stMarkdown h4 { font-size: 1.1rem !important; margin-bottom: 0.5rem; margin-top: 1rem; }
     .stApp .stMarkdown h5 { font-size: 0.90rem !important; margin-bottom: 0.5rem; margin-top: 0.8rem; }
     .stApp .stMarkdown h6 { font-size: 0.88rem !important; margin-bottom: 0.4rem; margin-top: 0.8rem; font-weight: bold;}
-    button[data-testid="stButton"][kind="primary"][key="reset_button"] { padding: 0.2rem 0.5rem !important; line-height: 1.2 !important; font-size: 1.1rem !important; border-radius: 0.25rem !important; }
+    
+    /* Modifica al CSS per i bottoni Reset e Cache per farli stare vicini */
+    button[data-testid="stButton"][kind="primary"][key="reset_button"],
+    button[data-testid="stButton"][kind="secondary"][key="clear_cache_button"] { 
+        padding: 0.2rem 0.5rem !important; 
+        line-height: 1.2 !important; 
+        font-size: 1.0rem !important; /* Leggermente più piccolo per far stare il testo */
+        border-radius: 0.25rem !important; 
+        margin-right: 5px; /* Aggiunge spazio tra i bottoni */
+    }
     button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled { cursor: not-allowed; opacity: 0.5; }
+    
     .stApp { padding-top: 2rem; }
     .stDataFrame td { text-align: center !important; }
     div[data-testid="stDateInput"] label { font-size: 0.85rem !important; }
@@ -34,20 +44,32 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v15.0") # Version updated
+st.markdown("## 🚆 InfraTrack v15.1") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
-# --- GESTIONE RESET ---
+# --- GESTIONE RESET E CACHE ---
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
-if st.button("🔄", key="reset_button", help="Resetta l'analisi", disabled=not st.session_state.file_processed_success):
-    st.session_state.widget_key_counter += 1; st.session_state.file_processed_success = False
-    keys_to_reset = list(st.session_state.keys())
-    for key in keys_to_reset:
-        if not key.startswith("_"): del st.session_state[key]
-    st.session_state.widget_key_counter = 1
-    st.session_state.file_processed_success = False
-    st.rerun()
+
+# Colonne per affiancare i bottoni
+col_btn_1, col_btn_2, col_btn_3 = st.columns([0.1, 0.2, 0.7]) # Colonne per layout
+
+with col_btn_1:
+    # --- GESTIONE RESET (Sessione) ---
+    if st.button("🔄", key="reset_button", help="Resetta l'analisi (Svuota Sessione)", disabled=not st.session_state.file_processed_success):
+        st.session_state.widget_key_counter += 1; st.session_state.file_processed_success = False
+        keys_to_reset = list(st.session_state.keys())
+        for key in keys_to_reset:
+            if not key.startswith("_"): del st.session_state[key]
+        st.session_state.widget_key_counter = 1
+        st.session_state.file_processed_success = False
+        st.rerun()
+
+with col_btn_2:
+    # --- GESTIONE CACHE (Dati temporanei) ---
+    if st.button("🗑️ Svuota Cache", key="clear_cache_button", help="Elimina i dati temporanei (Forza ri-analisi @st.cache_data)"):
+        st.cache_data.clear()
+        st.toast("Cache dei dati svuotata!", icon="✅")
 
 
 # --- CARICAMENTO FILE ---
@@ -96,22 +118,18 @@ def format_duration_from_xml(duration_str):
         work_days = total_hours / (minutes_per_day / 60.0); return f"{round(work_days)}g"
     except Exception: return "N/D"
 
-# --- [NUOVA FUNZIONE] ESTRAZIONE DATI TIMEPHASED PER CURVA S ---
+# --- ESTRAZIONE DATI TIMEPHASED PER CURVA S ---
 @st.cache_data
 def extract_timephased_baseline_cost(_xml_tree, _namespaces):
     """
     Estrae i dati di Costo Baseline (Type=10) distribuiti nel tempo (Timephased)
     dalle Assegnazioni (Assignments) per costruire la Curva S.
-    Questo è il metodo corretto di PM, non la stima lineare.
     """
     daily_cost_data = []
-    
-    # Itera su tutte le assegnazioni nel progetto
     assignments = _xml_tree.findall('.//msp:Assignment', namespaces=_namespaces)
     
     for ass in assignments:
-        # Cerca i dati Timephased DENTRO la Baseline dell'assegnazione
-        # e filtra solo per il Tipo "10" (Costo Baseline)
+        # Cerca i dati Timephased DENTRO la Baseline dell'assegnazione (Type "10" = Baseline Cost)
         timephased_nodes = ass.findall(
             './/msp:Baseline/msp:TimephasedData[msp:Type="10"]', 
             namespaces=_namespaces
@@ -123,10 +141,8 @@ def extract_timephased_baseline_cost(_xml_tree, _namespaces):
             
             if start_date_str and value_str:
                 try:
-                    # La data si riferisce all'INIZIO del periodo (es. un giorno)
                     current_date = datetime.fromisoformat(start_date_str).date()
-                    # Il costo è in centesimi (o unità base / 100)
-                    cost_value = float(value_str) / 100.0
+                    cost_value = float(value_str) / 100.0 # Costo in centesimi
                     
                     if cost_value > 0:
                         daily_cost_data.append({'Date': current_date, 'Value': cost_value})
@@ -136,13 +152,12 @@ def extract_timephased_baseline_cost(_xml_tree, _namespaces):
     if not daily_cost_data:
         return pd.DataFrame(columns=['Date', 'Value'])
 
-    # Aggrega i dati: somma tutti i costi di tutte le assegnazioni per ogni singolo giorno
     daily_df = pd.DataFrame(daily_cost_data)
     daily_df['Date'] = pd.to_datetime(daily_df['Date'])
     aggregated_daily_df = daily_df.groupby('Date')['Value'].sum().reset_index()
     
     return aggregated_daily_df
-# --- FINE NUOVA FUNZIONE ---
+# --- FINE FUNZIONE ---
 
 
 # --- INIZIO ANALISI ---
@@ -153,7 +168,12 @@ if current_file_to_process is not None:
         with st.spinner('Caricamento e analisi completa del file in corso...'):
             try:
                 current_file_to_process.seek(0); file_content_bytes = current_file_to_process.read()
-                parser = etree.XMLParser(recover=True); tree = et.fromstring(file_content_bytes, parser=parser)
+                
+                # --- [CORREZIONE] Da 'et' a 'etree' ---
+                parser = etree.XMLParser(recover=True)
+                tree = etree.fromstring(file_content_bytes, parser=parser)
+                # --- FINE CORREZIONE ---
+                
                 ns = {'msp': 'http://schemas.microsoft.com/project'}
 
                 minutes_per_day = get_minutes_per_day(tree, ns)
@@ -203,7 +223,6 @@ if current_file_to_process is not None:
                         except ValueError: total_slack_days = 0
 
                     if uid != '0':
-                        # Nota: WBS e Summary sono ancora utili per altre analisi, li teniamo.
                         all_tasks_data_list.append({"UID": uid, "Name": name, "Start": start_date, "Finish": finish_date, "Duration": duration_formatted, "Cost": cost_euros, 
                                                     "Milestone": is_milestone, "Summary": is_summary, "WBS": wbs, "TotalSlackDays": total_slack_days})
 
@@ -242,18 +261,16 @@ if current_file_to_process is not None:
                     min_date_for_sort = date.min
                     df_milestones['DataInizioObj'] = pd.to_datetime(df_milestones['DataInizioObj'], errors='coerce').dt.date
                     df_milestones['DataInizioObj'] = df_milestones['DataInizioObj'].fillna(min_date_for_sort)
-                    df_milestones = df_milestones.sort_values(by="DataInizioObj").reset_index(drop=True)
+                    df_milestones = df_milestones.sort_values(by="DataIn_Obj").reset_index(drop=True)
                     st.session_state['df_milestones_display'] = df_milestones.drop(columns=['DataInizioObj'])
                 else: st.session_state['df_milestones_display'] = None
 
                 # Salvataggio TUTTE le attività (invariato)
                 st.session_state['all_tasks_data'] = pd.DataFrame(all_tasks_data_list)
                 
-                # --- [NUOVO] CALCOLO DATI CURVA S (TIMEPHASED) ---
-                # Questo ora sostituisce la vecchia logica
+                # CALCOLO DATI CURVA S (TIMEPHASED)
                 scurve_baseline_data = extract_timephased_baseline_cost(tree, ns)
                 st.session_state['scurve_baseline_data'] = scurve_baseline_data
-                # Salva il costo totale calcolato dai dati timephased per il debug
                 st.session_state['debug_timephased_total_cost'] = scurve_baseline_data['Value'].sum() if not scurve_baseline_data.empty else 0
                 
                 
@@ -266,7 +283,14 @@ if current_file_to_process is not None:
                 st.rerun()
 
             except Exception as e:
-                st.error(f"Errore Analisi durante elaborazione iniziale: {e}"); st.error(f"Traceback: {traceback.format_exc()}"); st.error("Verifica file XML."); st.session_state.file_processed_success = False;
+                # Stampa l'errore completo nel terminale/log
+                print(f"Errore Analisi: {e}")
+                print(traceback.format_exc())
+                # Mostra un messaggio chiaro all'utente
+                st.error(f"Errore Analisi durante elaborazione iniziale: {e}"); 
+                st.error(f"Traceback: {traceback.format_exc()}"); 
+                st.error("Verifica file XML."); 
+                st.session_state.file_processed_success = False;
 
 
     # --- VISUALIZZAZIONE DATI E ANALISI AVANZATA ---
@@ -303,12 +327,8 @@ if current_file_to_process is not None:
         # --- Analisi Dettagliate ---
         st.markdown("---"); st.markdown("##### 📊 Analisi Dettagliate")
         
-        # Non serve più il dataframe dei task per la curva S
-        # all_tasks_df = st.session_state.get('all_tasks_data') 
-        
         if st.button("📈 Avvia Analisi Curva S", key="analyze_scurve"):
             
-            # --- [MODIFICATO] Recupera i dati Timephased dalla sessione ---
             daily_cost_df = st.session_state.get('scurve_baseline_data')
             
             if daily_cost_df is None or daily_cost_df.empty:
@@ -316,11 +336,9 @@ if current_file_to_process is not None:
                 st.warning("Assicurati che il progetto abbia una Baseline salvata (Salva Baseline) e che contenga costi assegnati.")
             else:
                 try:
-                    # --- CURVA S (SIL) - LOGICA CORRETTA ---
                     st.markdown("###### Curva S (Costo Cumulato - Dati Baseline Timephased)")
                     
                     with st.spinner("Aggregazione dati Curva S..."):
-                        # Converti selected_start_date/finish_date in datetime per il filtro pandas
                         selected_start_dt = datetime.combine(selected_start_date, datetime.min.time())
                         selected_finish_dt = datetime.combine(selected_finish_date, datetime.max.time())
                         
@@ -357,7 +375,7 @@ if current_file_to_process is not None:
                         excel_data_sil = output_sil.getvalue()
                         st.download_button(label="Scarica Dati SIL (Excel)", data=excel_data_sil, file_name="dati_sil_mensile.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_sil")
 
-                        # --- [MODIFICATO] DEBUG SUL COSTO TOTALE ---
+                        # DEBUG SUL COSTO TOTALE
                         st.markdown("---")
                         st.markdown("##### Diagnostica Dati Calcolati (Timephased)")
                         
@@ -365,7 +383,6 @@ if current_file_to_process is not None:
                         formatted_debug_cost = f"€ {debug_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
                         st.write(f"**Costo Totale Calcolato (somma dati Timephased Baseline):** {formatted_debug_cost}")
                         st.caption(f"Questo totale è la somma di tutti i costi di baseline distribuiti nel tempo (Type 10) trovati nelle assegnazioni. Dovrebbe corrispondere al costo di Baseline totale del progetto.")
-                        # --- FINE DEBUG ---
 
                     else:
                         st.warning("Nessun costo di Baseline trovato nel periodo selezionato.")
