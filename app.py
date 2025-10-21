@@ -1,4 +1,4 @@
-# --- v17.8 (Titoli Sezione e Grafico Aggiornati) ---
+# --- v17.9 (Correzione Titolo Grafico, Logica Reset/Cache) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -12,7 +12,7 @@ import traceback
 import os
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v17.8", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v17.9", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -37,42 +37,59 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v17.8") # Version updated
+st.markdown("## 🚆 InfraTrack v17.9") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
-# ... (Codice invariato) ...
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 col_btn_1, col_btn_2, col_btn_3 = st.columns([0.1, 0.2, 0.7])
+
 with col_btn_1:
-    if st.button("🔄", key="reset_button", help="Resetta l'analisi (Svuota Sessione)", disabled=not st.session_state.file_processed_success):
-        st.session_state.widget_key_counter += 1; st.session_state.file_processed_success = False
+    # --- [MODIFICATO v17.9] Reset più robusto ---
+    if st.button("🔄", key="reset_button", help="Resetta l'analisi (Svuota Sessione e File)", disabled=not st.session_state.file_processed_success):
+        # Incrementa il contatore per cambiare la key del file_uploader
+        st.session_state.widget_key_counter += 1
+        st.session_state.file_processed_success = False # Resetta flag successo
+
+        # Cancella esplicitamente lo stato del file caricato
+        if 'uploaded_file_state' in st.session_state:
+            del st.session_state['uploaded_file_state']
+
+        # Cancella tutti gli altri dati di sessione (tranne quelli interni di Streamlit)
         keys_to_reset = list(st.session_state.keys())
         for key in keys_to_reset:
-            if not key.startswith("_"): del st.session_state[key]
-        st.session_state.widget_key_counter = 1; st.session_state.file_processed_success = False
-        st.rerun()
+            if not key.startswith("_") and key != 'widget_key_counter': # Non cancellare il contatore!
+                del st.session_state[key]
+
+        st.toast("Sessione resettata.", icon="🔄")
+        st.rerun() # Forza il rerun per applicare le modifiche (necessario per reset)
+
 with col_btn_2:
-    if st.button("🗑️ Svuota Cache", key="clear_cache_button", help="Elimina i dati temporanei (Forza ri-analisi @st.cache_data)"):
-        st.cache_data.clear(); st.toast("Cache dei dati svuotata!", icon="✅")
+    # --- [MODIFICATO v17.9] Rimosso st.rerun() ---
+    if st.button("🗑️ Svuota Cache", key="clear_cache_button", help="Elimina i dati temporanei calcolati (Forza ri-analisi @st.cache_data)"):
+        st.cache_data.clear()
+        st.toast("Cache dei dati svuotata! I dati verranno ricalcolati alla prossima analisi.", icon="✅")
+        # NON chiamare st.rerun() qui, lascia che Streamlit gestisca l'aggiornamento
 
 # --- CARICAMENTO FILE ---
-# ... (Codice invariato) ...
 st.markdown("---"); st.markdown("#### 1. Carica la Baseline di Riferimento")
+# La key dipende da widget_key_counter, che viene incrementato dal reset
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
 uploaded_file = st.file_uploader("Seleziona il file .XML...", type=["xml"], label_visibility="collapsed", key=uploader_key)
+
+# Logica per gestire il caricamento e lo stato (invariata)
 if st.session_state.get('file_processed_success', False) and 'uploaded_file_state' in st.session_state : st.success('File XML analizzato con successo!')
 if uploaded_file is not None and uploaded_file != st.session_state.get('uploaded_file_state'):
     st.session_state['uploaded_file_state'] = uploaded_file
-    st.session_state.file_processed_success = False
-elif 'uploaded_file_state' not in st.session_state:
-    uploaded_file = None
+    st.session_state.file_processed_success = False # Forza ri-analisi se il file cambia
+elif 'uploaded_file_state' not in st.session_state: # Se lo stato è stato cancellato (dal reset)
+    uploaded_file = None # Assicura che anche la variabile locale sia None
 
 # --- FUNZIONI HELPER ---
+# ... (Funzioni get_minutes_per_day, format_duration_from_xml, calculate_daily_distribution_bottom_up, get_relevant_summary_name invariate da v17.7) ...
 @st.cache_data
 def get_minutes_per_day(_tree, _ns):
-    # ... (Codice invariato) ...
     minutes_per_day = 480
     try:
         default_calendar = _tree.find(".//msp:Calendar[msp:UID='1']", namespaces=_ns)
@@ -93,7 +110,6 @@ def get_minutes_per_day(_tree, _ns):
     return minutes_per_day
 
 def format_duration_from_xml(duration_str):
-    # ... (Codice invariato) ...
     minutes_per_day = st.session_state.get('minutes_per_day', 480)
     if not duration_str or minutes_per_day <= 0: return "0g"
     try:
@@ -106,7 +122,6 @@ def format_duration_from_xml(duration_str):
 
 @st.cache_data
 def calculate_daily_distribution_bottom_up(_tasks_dataframe):
-    # ... (Funzione invariata v17.5 - Calcola dataframe giornaliero dettagliato con WBS) ...
     daily_cost_data = []
     tasks_df = _tasks_dataframe.copy()
     tasks_df['Start'] = pd.to_datetime(tasks_df['Start'], errors='coerce').dt.date
@@ -157,7 +172,6 @@ def calculate_daily_distribution_bottom_up(_tasks_dataframe):
     return daily_dataframe
 
 def get_relevant_summary_name(wbs_list, wbs_map):
-    # ... (Funzione invariata v17.7) ...
     if not wbs_list: return "N/D"
     unique_wbs_list = sorted(list(set(wbs_list)))
     if len(unique_wbs_list) == 1:
@@ -196,7 +210,9 @@ def get_relevant_summary_name(wbs_list, wbs_map):
 # --- INIZIO ANALISI ---
 current_file_to_process = st.session_state.get('uploaded_file_state')
 if current_file_to_process is not None:
-    if not st.session_state.get('file_processed_success', False):
+    # Esegui l'analisi solo se il file è caricato E non è stato ancora processato con successo
+    # O se il file caricato è cambiato
+    if not st.session_state.get('file_processed_success', False) or current_file_to_process != st.session_state.get('last_processed_file'):
         with st.spinner('Caricamento e analisi completa del file in corso...'):
              try:
                 # ... (Parsing XML, estrazione dati task, popolamento wbs_name_map invariato) ...
@@ -282,16 +298,20 @@ if current_file_to_process is not None:
                 current_file_to_process.seek(0); debug_content_bytes = current_file_to_process.read(2000);
                 try: st.session_state['debug_raw_text'] = '\n'.join(debug_content_bytes.decode('utf-8', errors='ignore').splitlines()[:50])
                 except Exception as decode_err: st.session_state['debug_raw_text'] = f"Errore decodifica debug: {decode_err}"
+
+                st.session_state['last_processed_file'] = current_file_to_process # Salva riferimento al file processato
                 st.session_state.file_processed_success = True
-                st.rerun()
+                # Non fare st.rerun() qui, lascia che Streamlit aggiorni dopo lo spinner
              except Exception as e:
                 print(f"Errore Analisi: {e}"); print(traceback.format_exc())
                 st.error(f"Errore Analisi durante elaborazione iniziale: {e}");
                 st.error(f"Traceback: {traceback.format_exc()}");
                 st.error("Verifica file XML.");
                 st.session_state.file_processed_success = False;
+                st.session_state['last_processed_file'] = None # Resetta riferimento file fallito
 
     # --- VISUALIZZAZIONE DATI E ANALISI AVANZATA ---
+    # Questa parte viene eseguita ad ogni interazione SE il file è stato processato con successo
     if st.session_state.get('file_processed_success', False):
 
         # --- Sezione 2 (Invariata) ---
@@ -346,8 +366,7 @@ if current_file_to_process is not None:
                  st.error("Errore: Mappa WBS->Nome non trovata. Ricaricare il file.")
             else:
                 try:
-                    # --- [MODIFICATO v17.8] Titolo Sezione ---
-                    st.markdown(f"###### Analisi Curva S")
+                    st.markdown(f"###### Analisi Curva S") # Titolo aggiornato
 
                     with st.spinner(f"Calcolo distribuzione costi..."):
                         detailed_daily_cost_df = calculate_daily_distribution_bottom_up(all_tasks_dataframe.copy())
@@ -388,7 +407,7 @@ if current_file_to_process is not None:
                                 aggregated_data = aggregated_daily
                                 aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime('%Y-%m-%d')
                                 axis_title = "Giorno"
-                                col_name = "Costo Giornaliero (€)"
+                                col_name = "Costo Giornaliero (€)" # <<< Corretto qui
                                 display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', col_summary_name]
                                 plot_custom_data = aggregated_data[col_summary_name]
 
@@ -405,20 +424,20 @@ if current_file_to_process is not None:
                             st.markdown(f"###### Grafico Curva S ({aggregation_level})")
                             fig_sil = go.Figure()
 
+                            # --- [MODIFICATO v17.9] Correzione typo titolo grafico ---
                             hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {aggregation_level}</b>: %{{y:,.2f}}€<extra></extra>'
                             hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<extra></extra>'
                             if aggregation_level == 'Giornaliera':
-                                hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {aggregation_level}</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>'
+                                hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {col_name}</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>' # Usa col_name corretto
                                 hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>'
 
                             fig_sil.add_trace(go.Bar(x=aggregated_data['Periodo'], y=aggregated_data['Value'], name=f'Costo {aggregation_level}', customdata=plot_custom_data, hovertemplate=hovertemplate_bar))
                             fig_sil.add_trace(go.Scatter(x=aggregated_data['Periodo'], y=aggregated_data['Costo Cumulato (€)'], name=f'Costo Cumulato', mode='lines+markers', yaxis='y2', customdata=plot_custom_data, hovertemplate=hovertemplate_scatter))
 
-                            # --- [MODIFICATO v17.8] Titolo Grafico ---
                             fig_sil.update_layout(
-                                title=f'Curva S - Costo {aggregation_level} e Cumulato', # Rimosso scurce_source
+                                title=f'Curva S - Costo {aggregation_level.replace("a", "o")} e Cumulato', # Titolo aggiornato e typo corretto
                                 xaxis_title=axis_title,
-                                yaxis=dict(title=f"Costo {aggregation_level} (€)"),
+                                yaxis=dict(title=f"Costo {aggregation_level.replace('a', 'o')} (€)"), # Typo corretto
                                 yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"),
                                 legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
                                 hovermode="x unified"
@@ -453,7 +472,7 @@ if current_file_to_process is not None:
                             # --- DEBUG ---
                             # ... (Debug invariato) ...
                             st.markdown("---")
-                            st.markdown(f"##### Diagnostica Dati Calcolati") # Titolo semplificato
+                            st.markdown(f"##### Diagnostica Dati Calcolati")
                             debug_task_count = st.session_state.get('debug_task_count', 0)
                             st.write(f"**Numero attività usate per la distribuzione (filtro WBS Bottom-Up):** {debug_task_count}")
                             debug_total = st.session_state.get('debug_total_cost', 0)
@@ -475,6 +494,7 @@ if current_file_to_process is not None:
         st.markdown("---")
         st.markdown("###### Istogrammi Risorse")
         st.info("Logica istogrammi da implementare (richiederà dati 'Lavoro' e 'Risorse').")
+
 
         # --- Debug Section (Invariata) ---
         # ... (Codice invariato) ...
