@@ -4,3 +4,4 @@ lxml
 plotly
 isodate
 openpyxl
+kaleido
