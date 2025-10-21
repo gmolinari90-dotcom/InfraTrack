@@ -1,4 +1,4 @@
-# --- v17.3 (Mostra Nomi Attività in Vista Giornaliera) ---
+# --- v17.4 (Correzione Errore Export Excel KeyError/IndexError) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import traceback
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v17.3", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v17.4", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -27,11 +27,7 @@ st.markdown("""
     button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled { cursor: not-allowed; opacity: 0.5; }
     .stApp { padding-top: 2rem; }
     .stDataFrame td { text-align: center !important; }
-    /* Aumenta larghezza colonna nomi attività se necessario */
-    .stDataFrame th:nth-child(4), .stDataFrame td:nth-child(4) { /* 4a colonna (TaskNames) */
-        text-align: left !important; /* Allinea a sinistra */
-        /* width: 40% !important; */ /* Decommenta se serve più spazio */
-    }
+    .stDataFrame th:nth-child(4), .stDataFrame td:nth-child(4) { text-align: left !important; }
     div[data-testid="stDateInput"] label { font-size: 0.85rem !important; }
     div[data-testid="stDateInput"] input { font-size: 0.85rem !important; padding: 0.3rem 0.5rem !important;}
     .stCaptionContainer { font-size: 0.75rem !important; margin-top: -0.5rem; margin-bottom: 1rem;}
@@ -40,7 +36,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v17.3") # Version updated
+st.markdown("## 🚆 InfraTrack v17.4") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -112,21 +108,14 @@ def get_parent_wbs(wbs_string):
     if wbs_string is None or "." not in wbs_string: return None
     return wbs_string.rsplit('.', 1)[0]
 
-# --- [MODIFICATA v17.3] FUNZIONE CALCOLO SIL (Ora include Nomi Task) ---
 @st.cache_data
 def calculate_daily_distribution_bottom_up(_tasks_dataframe):
-    """
-    Calcola la distribuzione giornaliera dei costi E dei nomi delle attività.
-    Usa logica WBS "Bottom-Up".
-    """
+    # ... (Funzione invariata v17.3 - Calcola dataframe giornaliero dettagliato) ...
     daily_cost_data = []
     tasks_df = _tasks_dataframe.copy()
-
     tasks_df['Start'] = pd.to_datetime(tasks_df['Start'], errors='coerce').dt.date
     tasks_df['Finish'] = pd.to_datetime(tasks_df['Finish'], errors='coerce').dt.date
     tasks_df['WBS'] = tasks_df['WBS'].astype(str)
-
-    # --- FILTRO GERARCHICO (Bottom-Up) ---
     valid_tasks_df = tasks_df.dropna(subset=['Start', 'Finish', 'Cost', 'WBS'])
     valid_tasks_df = valid_tasks_df[valid_tasks_df['Cost'] > 0]
     all_valid_wbs = set(valid_tasks_df['WBS'])
@@ -148,44 +137,29 @@ def calculate_daily_distribution_bottom_up(_tasks_dataframe):
             processed_indices.update(descendant_indices)
     if not tasks_to_distribute_list:
          st.session_state['debug_task_count'] = 0; st.session_state['debug_total_cost'] = 0
-         return pd.DataFrame(columns=['Date', 'Value', 'Name']) # Aggiunto Name
+         return pd.DataFrame(columns=['Date', 'Value', 'Name'])
     tasks_to_distribute = pd.DataFrame(tasks_to_distribute_list)
-    # --- FINE FILTRO ---
-
     st.session_state['debug_task_count'] = len(tasks_to_distribute)
     st.session_state['debug_total_cost'] = tasks_to_distribute['Cost'].sum()
-
-    # --- Distribuzione costi e nomi ---
     for _, task in tasks_to_distribute.iterrows():
         start_date = task['Start']
         finish_date = task['Finish']
         total_cost = task['Cost']
-        task_name = task['Name'] # <<<<<<<<<<<<<<< Prende il nome
-
+        task_name = task['Name']
         duration_days = (finish_date - start_date).days
         if duration_days < 0: continue
         number_of_days_in_period = duration_days + 1
-
         if number_of_days_in_period <= 0:
              value_per_day = total_cost; number_of_days_in_period = 1
         else: value_per_day = total_cost / number_of_days_in_period
-
         for i in range(number_of_days_in_period):
             current_date = start_date + timedelta(days=i)
-            # Aggiunge anche il nome al dizionario
-            daily_cost_data.append({'Date': current_date, 'Value': value_per_day, 'Name': task_name}) # <<<<<<
-
+            daily_cost_data.append({'Date': current_date, 'Value': value_per_day, 'Name': task_name})
     if not daily_cost_data:
-        return pd.DataFrame(columns=['Date', 'Value', 'Name']) # Aggiunto Name
-
-    # Crea dataframe giornaliero (NON AGGREGATO QUI)
+        return pd.DataFrame(columns=['Date', 'Value', 'Name'])
     daily_dataframe = pd.DataFrame(daily_cost_data)
     daily_dataframe['Date'] = pd.to_datetime(daily_dataframe['Date'])
-
-    # Ritorna il dataframe DETTAGLIATO (giorno per giorno, task per task)
     return daily_dataframe
-# --- FINE FUNZIONE ---
-
 
 # --- INIZIO ANALISI ---
 current_file_to_process = st.session_state.get('uploaded_file_state')
@@ -284,7 +258,7 @@ if current_file_to_process is not None:
     # --- VISUALIZZAZIONE DATI E ANALISI AVANZATA ---
     if st.session_state.get('file_processed_success', False):
 
-        # --- Sezione 2: Analisi Preliminare (Invariata) ---
+        # --- Sezione 2 (Invariata) ---
         # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 2. Analisi Preliminare"); st.markdown("##### 📄 Informazioni Generali dell'Appalto")
         project_name = st.session_state.get('project_name', "N/D"); formatted_cost = st.session_state.get('formatted_cost', "N/D")
@@ -337,7 +311,6 @@ if current_file_to_process is not None:
                     st.markdown(f"###### Curva S (Dati: {scurve_source})")
 
                     with st.spinner(f"Calcolo distribuzione costi ({scurve_source})..."):
-                        # Calcola la distribuzione giornaliera DETTAGLIATA (include nomi)
                         detailed_daily_cost_df = calculate_daily_distribution_bottom_up(all_tasks_dataframe.copy())
 
                     if detailed_daily_cost_df.empty:
@@ -349,107 +322,94 @@ if current_file_to_process is not None:
                         selected_finish_dt = datetime.combine(selected_finish_date, datetime.max.time())
 
                         mask_cost = (detailed_daily_cost_df['Date'] >= selected_start_dt) & (detailed_daily_cost_df['Date'] <= selected_finish_dt)
-                        filtered_cost = detailed_daily_cost_df.loc[mask_cost] # Dati GIORNALIERI dettagliati (con nomi)
+                        filtered_cost = detailed_daily_cost_df.loc[mask_cost]
 
                         if not filtered_cost.empty:
 
-                            # --- AGGREGAZIONE DATI E NOMI ---
-                            aggregated_data = pd.DataFrame() # Inizializza dataframe vuoto
+                            aggregated_data = pd.DataFrame()
                             display_columns = []
-                            excel_columns = []
-                            plot_custom_data = None # Nomi per hover del grafico
+                            # excel_columns = [] # Rimosso, definito dopo
+                            plot_custom_data = None
 
-                            # Funzione helper per aggregare nomi (max 3 + conteggio)
                             def aggregate_names(names):
                                 unique_names = sorted(list(set(names)))
                                 if not unique_names: return ""
-                                if len(unique_names) <= 3:
-                                    return ', '.join(unique_names)
-                                else:
-                                    return ', '.join(unique_names[:3]) + f', ... (+{len(unique_names) - 3})'
+                                if len(unique_names) <= 3: return ', '.join(unique_names)
+                                else: return ', '.join(unique_names[:3]) + f', ... (+{len(unique_names) - 3})'
 
                             if aggregation_level == 'Mensile':
-                                # Aggrega VALORI per mese
                                 aggregated_values = filtered_cost.set_index('Date')['Value'].resample('ME').sum().reset_index()
                                 aggregated_data = aggregated_values
                                 aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime('%Y-%m')
                                 axis_title = "Mese"
                                 col_name = "Costo Mensile (€)"
                                 display_columns = ['Periodo', col_name, 'Costo Cumulato (€)']
-                                excel_columns = ['Date', 'Value', 'Costo Cumulato (€)'] # Usiamo Date per Excel
-
+                                # excel_columns = ['Date', 'Value', 'Costo Cumulato (€)'] # Definito dopo
                             else: # 'Giornaliera'
-                                # Aggrega VALORI E NOMI per giorno
                                 aggregated_daily = filtered_cost.groupby('Date').agg(
                                     Value=('Value', 'sum'),
-                                    TaskNames=('Name', aggregate_names) # Usa la helper
+                                    TaskNames=('Name', aggregate_names)
                                 ).reset_index()
                                 aggregated_data = aggregated_daily
                                 aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime('%Y-%m-%d')
                                 axis_title = "Giorno"
                                 col_name = "Costo Giornaliero (€)"
-                                display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', 'TaskNames'] # Aggiungi TaskNames
-                                excel_columns = ['Date', 'Value', 'Costo Cumulato (€)', 'TaskNames']
-                                plot_custom_data = aggregated_data['TaskNames'] # Passa i nomi al grafico
+                                display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', 'TaskNames']
+                                # excel_columns = ['Date', 'Value', 'Costo Cumulato (€)', 'TaskNames'] # Definito dopo
+                                plot_custom_data = aggregated_data['TaskNames']
 
-                            # Calcola cumulato in ogni caso
                             aggregated_data['Costo Cumulato (€)'] = aggregated_data['Value'].cumsum()
 
-                            # --- VISUALIZZAZIONE ---
                             st.markdown(f"###### Tabella Dati SIL Aggregati ({aggregation_level})")
                             df_display_sil = aggregated_data.copy()
-                            df_display_sil.rename(columns={'Value': col_name}, inplace=True) # Rinomina Value
-
-                            # Formattazione colonne per display
+                            df_display_sil.rename(columns={'Value': col_name}, inplace=True)
                             df_display_sil[col_name] = df_display_sil[col_name].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
                             df_display_sil['Costo Cumulato (€)'] = df_display_sil['Costo Cumulato (€)'].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-
-                            # Mostra solo le colonne pertinenti
                             st.dataframe(df_display_sil[display_columns], use_container_width=True, hide_index=True)
 
                             st.markdown(f"###### Grafico Curva S ({aggregation_level})")
                             fig_sil = go.Figure()
-
-                            # Aggiungi tooltip con nomi attività SOLO se in vista giornaliera
                             hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {aggregation_level}</b>: %{{y:,.2f}}€<extra></extra>'
                             hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<extra></extra>'
                             if aggregation_level == 'Giornaliera':
                                 hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {aggregation_level}</b>: %{{y:,.2f}}€<br><b>Attività</b>: %{{customdata}}<extra></extra>'
                                 hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<br><b>Attività</b>: %{{customdata}}<extra></extra>'
-
-                            fig_sil.add_trace(go.Bar(
-                                x=aggregated_data['Periodo'],
-                                y=aggregated_data['Value'],
-                                name=f'Costo {aggregation_level}',
-                                customdata=plot_custom_data,
-                                hovertemplate=hovertemplate_bar
-                            ))
-                            fig_sil.add_trace(go.Scatter(
-                                x=aggregated_data['Periodo'],
-                                y=aggregated_data['Costo Cumulato (€)'],
-                                name=f'Costo Cumulato',
-                                mode='lines+markers',
-                                yaxis='y2',
-                                customdata=plot_custom_data,
-                                hovertemplate=hovertemplate_scatter
-                            ))
-                            fig_sil.update_layout(
-                                title=f'Curva S - Costo {aggregation_level} e Cumulato (Dati {scurve_source})',
-                                xaxis_title=axis_title,
-                                yaxis=dict(title=f"Costo {aggregation_level} (€)"),
-                                yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"),
-                                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
-                                hovermode="x unified" # Migliora hover
-                            )
+                            fig_sil.add_trace(go.Bar(x=aggregated_data['Periodo'], y=aggregated_data['Value'], name=f'Costo {aggregation_level}', customdata=plot_custom_data, hovertemplate=hovertemplate_bar))
+                            fig_sil.add_trace(go.Scatter(x=aggregated_data['Periodo'], y=aggregated_data['Costo Cumulato (€)'], name=f'Costo Cumulato', mode='lines+markers', yaxis='y2', customdata=plot_custom_data, hovertemplate=hovertemplate_scatter))
+                            fig_sil.update_layout(title=f'Curva S - Costo {aggregation_level} e Cumulato (Dati {scurve_source})', xaxis_title=axis_title, yaxis=dict(title=f"Costo {aggregation_level} (€)"), yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"), legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01), hovermode="x unified")
                             st.plotly_chart(fig_sil, use_container_width=True)
 
-                            # --- EXPORT EXCEL ---
+                            # --- [CORRETTO] EXPORT EXCEL ---
                             output_sil = BytesIO()
-                            df_export = aggregated_data.copy()
-                            # Rinomina colonne per Excel in base al livello
-                            df_export.rename(columns={'Value': col_name, 'Periodo': axis_title, 'Date': 'Data Inizio Periodo'}, inplace=True)
+                            df_export = aggregated_data.copy() # Lavora su una copia
+
+                            # Definisci le colonne da esportare e la mappa di rinomina QUI
+                            cols_to_select_excel = []
+                            rename_map_excel = {}
+                            excel_sheet_name = f'SIL_{aggregation_level}'
+
+                            if aggregation_level == 'Mensile':
+                                cols_to_select_excel = ['Date', 'Value', 'Costo Cumulato (€)']
+                                rename_map_excel = {'Date': 'Mese', 'Value': 'Costo Mensile (€)'}
+                                # Applica la formattazione mese a 'Date' prima di rinominare
+                                df_export['Date'] = df_export['Date'].dt.strftime('%Y-%m')
+                            else: # Giornaliera
+                                cols_to_select_excel = ['Date', 'Value', 'Costo Cumulato (€)', 'TaskNames']
+                                rename_map_excel = {'Date': 'Giorno', 'Value': 'Costo Giornaliero (€)', 'TaskNames': 'Attività'}
+                                # Applica la formattazione giorno a 'Date' prima di rinominare
+                                df_export['Date'] = df_export['Date'].dt.strftime('%Y-%m-%d')
+
+                            # 1. Seleziona le colonne desiderate
+                            df_to_write = df_export[cols_to_select_excel]
+
+                            # 2. Rinomina le colonne selezionate
+                            df_to_write = df_to_write.rename(columns=rename_map_excel) # Non usare inplace qui
+
+                            # 3. Scrivi su Excel
                             with pd.ExcelWriter(output_sil, engine='openpyxl') as writer:
-                                df_export[excel_columns].to_excel(writer, index=False, sheet_name=f'SIL_{aggregation_level}')
+                                df_to_write.to_excel(writer, index=False, sheet_name=excel_sheet_name)
+                            # --- FINE CORREZIONE ---
+
                             excel_data_sil = output_sil.getvalue()
                             st.download_button(label=f"Scarica Dati SIL ({aggregation_level})", data=excel_data_sil, file_name=f"dati_sil_{aggregation_level.lower()}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_sil")
 
@@ -474,11 +434,14 @@ if current_file_to_process is not None:
                     st.error(traceback.format_exc())
 
         # --- Placeholder per Istogrammi (Invariato) ---
+        # ... (Codice invariato) ...
         st.markdown("---")
         st.markdown("###### Istogrammi Risorse")
         st.info("Logica istogrammi da implementare (richiederà dati 'Lavoro' e 'Risorse').")
 
+
         # --- Debug Section (Invariata) ---
+        # ... (Codice invariato) ...
         debug_text = st.session_state.get('debug_raw_text')
         if debug_text:
             st.markdown("---")
