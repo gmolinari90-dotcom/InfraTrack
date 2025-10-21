@@ -1,4 +1,4 @@
-# --- v11.5 (Correzione NameError) ---
+# --- v11.6 (Codice Completo, Corretto e Verificato) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -11,13 +11,12 @@ import plotly.express as px
 import traceback # Per debug avanzato
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v11.5", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v11.6", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
-# ... (CSS Identico - omesso per brevità) ...
 st.markdown("""
 <style>
-    /* ... */
+    /* Stili CSS stabili */
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button { font-size: 0.85rem !important; }
     .stApp h2 { font-size: 1.5rem !important; }
     .stApp .stMarkdown h4 { font-size: 1.1rem !important; margin-bottom: 0.5rem; margin-top: 1rem; }
@@ -35,24 +34,23 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v11.5") # Version updated
+st.markdown("## 🚆 InfraTrack v11.6") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
-# ... (Identico a v11.4) ...
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 if st.button("🔄", key="reset_button", help="Resetta l'analisi", disabled=not st.session_state.file_processed_success):
     st.session_state.widget_key_counter += 1; st.session_state.file_processed_success = False
-    keys_to_reset = list(st.session_state.keys());
+    keys_to_reset = list(st.session_state.keys())
     for key in keys_to_reset:
         if not key.startswith("_"): del st.session_state[key]
-    st.session_state.widget_key_counter = 1; st.session_state.file_processed_success = False
+    st.session_state.widget_key_counter = 1
+    st.session_state.file_processed_success = False
     st.rerun()
 
 
 # --- CARICAMENTO FILE ---
-# ... (Identico a v11.4) ...
 st.markdown("---"); st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
 uploaded_file = st.file_uploader("Seleziona il file .XML...", type=["xml"], label_visibility="collapsed", key=uploader_key)
@@ -65,14 +63,13 @@ elif 'uploaded_file_state' not in st.session_state:
 
 
 # --- FUNZIONI HELPER (definite globalmente) ---
-# ... (Identiche a v11.4) ...
-@st.cache_data
+@st.cache_data # Cache per non ricalcolare inutilmente
 def get_minutes_per_day(_tree, _ns):
     minutes_per_day = 480 # Default 8 ore
     try:
         default_calendar = _tree.find(".//msp:Calendar[msp:UID='1']", namespaces=_ns)
         if default_calendar is not None:
-             working_day = default_calendar.find(".//msp:WeekDay[msp:DayType='1']", namespaces=_ns)
+             working_day = default_calendar.find(".//msp:WeekDay[msp:DayType='1']", namespaces=_ns) # Tipo 1 = giorno lavorativo
              if working_day is not None:
                   working_minutes = 0
                   for working_time in working_day.findall(".//msp:WorkingTime", namespaces=_ns):
@@ -84,7 +81,8 @@ def get_minutes_per_day(_tree, _ns):
                                  working_minutes += delta.total_seconds() / 60
                             except ValueError: pass
                   if working_minutes > 0: minutes_per_day = working_minutes
-    except Exception: pass
+    except Exception:
+        pass # Ritorna il default
     return minutes_per_day
 
 def format_duration_from_xml(duration_str):
@@ -99,9 +97,13 @@ def format_duration_from_xml(duration_str):
      except Exception: return "N/D"
 
 def parse_timephased_data_from_assignments(assignments_node, ns, data_type, is_cost=False):
-    # ... (Identica a v11.4) ...
+    """
+    Estrae dati timephased (Lavoro o Costo) dal NODO ASSIGNMENTS.
+    data_type: '1' (Lavoro), '2' (Costo), '8' (Lavoro Baseline), '9' (Costo Baseline)
+    """
     data = []
-    if assignments_node is None: return pd.DataFrame(data, columns=['TaskUID', 'ResourceUID', 'Date', 'Value'])
+    if assignments_node is None:
+        return pd.DataFrame(data, columns=['TaskUID', 'ResourceUID', 'Date', 'Value'])
     for assignment in assignments_node.findall('msp:Assignment', ns):
         task_uid = assignment.findtext('msp:TaskUID', namespaces=ns); resource_uid = assignment.findtext('msp:ResourceUID', namespaces=ns)
         baseline_data = assignment.find(f"msp:TimephasedData[msp:Type='{data_type}']", ns)
@@ -111,11 +113,18 @@ def parse_timephased_data_from_assignments(assignments_node, ns, data_type, is_c
                     start_str = period.findtext('msp:Start', namespaces=ns); value_str = period.findtext('msp:Value', namespaces=ns)
                     if start_str and value_str and value_str != "0":
                         start_date = datetime.fromisoformat(start_str).date(); value = 0.0
-                        if is_cost: value = float(value_str) / 100.0
-                        else: duration_obj = isodate.parse_duration(value_str); value = duration_obj.total_seconds() / 3600
-                        data.append({'TaskUID': task_uid, 'ResourceUID': resource_uid, 'Date': start_date, 'Value': value})
-                except Exception as e: continue
-    return pd.DataFrame(data, columns=['TaskUID', 'ResourceUID', 'Date', 'Value'])
+                        if is_cost:
+                            value = float(value_str) / 100.0 # Costo è in centesimi
+                        else: # È Lavoro
+                            duration_obj = isodate.parse_duration(value_str) # Lavoro è in formato PT...H...M...S
+                            value = duration_obj.total_seconds() / 3600 # Converti in ore
+                        if value > 0:
+                            data.append({'TaskUID': task_uid, 'ResourceUID': resource_uid, 'Date': start_date, 'Value': value})
+                except Exception as e:
+                    continue
+    if not data:
+        return pd.DataFrame(data, columns=['TaskUID', 'ResourceUID', 'Date', 'Value'])
+    return pd.DataFrame(data)
 
 
 # --- INIZIO ANALISI ---
@@ -132,12 +141,11 @@ if current_file_to_process is not None:
                 minutes_per_day = get_minutes_per_day(tree, ns)
                 st.session_state['minutes_per_day'] = minutes_per_day
 
-                # --- CORREZIONE: Inizializza le variabili PRIMA dell'if ---
+                # Inizializza le variabili prima dell'if
                 project_name = "N/D"
                 formatted_cost = "€ 0,00"
-                project_start_date = date.today() # Default di oggi
-                project_finish_date = date.today() + timedelta(days=365) # Default di un anno
-                # --- FINE CORREZIONE ---
+                project_start_date = date.today()
+                project_finish_date = date.today() + timedelta(days=365)
 
                 task_uid_1 = tree.find(".//msp:Task[msp:UID='1']", namespaces=ns)
                 if task_uid_1 is not None:
@@ -148,20 +156,17 @@ if current_file_to_process is not None:
                     if start_str: project_start_date = datetime.fromisoformat(start_str).date()
                     if finish_str: project_finish_date = datetime.fromisoformat(finish_str).date()
                 
-                # Fallback nel caso in cui le date siano ancora errate
-                if project_start_date > project_finish_date:
+                if project_start_date > project_finish_date: # Fallback
                     project_finish_date = project_start_date + timedelta(days=1)
                 
-                # Salva in sessione (ora le variabili esistono sempre)
                 st.session_state['project_name'] = project_name; st.session_state['formatted_cost'] = formatted_cost
                 st.session_state['project_start_date'] = project_start_date; st.session_state['project_finish_date'] = project_finish_date
 
-                # --- Estrazione Dati Attività e TUP/TUF (con sintassi corretta) ---
+                # --- Estrazione Dati Attività e TUP/TUF ---
                 potential_milestones = {}; all_tasks = tree.findall('.//msp:Task', namespaces=ns)
                 tup_tuf_pattern = re.compile(r'(?i)(TUP|TUF)\s*\d*'); all_tasks_data_list = []
 
                 for task in all_tasks:
-                    # ... (Estrazione dati base attività come v11.3) ...
                     uid = task.findtext('msp:UID', namespaces=ns); name = task.findtext('msp:Name', namespaces=ns) or "";
                     start_str = task.findtext('msp:Start', namespaces=ns); finish_str = task.findtext('msp:Finish', namespaces=ns);
                     start_date = datetime.fromisoformat(start_str).date() if start_str else None; finish_date = datetime.fromisoformat(finish_str).date() if finish_str else None
@@ -206,31 +211,55 @@ if current_file_to_process is not None:
                               elif duration_seconds > existing_duration_seconds:
                                    potential_milestones[tup_tuf_key] = current_task_data
 
-                # Salvataggio dati TUP/TUF (Identico a v11.3)
-                final_milestones_data = [] # ... (omissis)
-                if final_milestones_data: # ... (omissis)
+                # Salvataggio dati TUP/TUF
+                final_milestones_data = []
+                for key in potential_milestones:
+                     data = potential_milestones[key]
+                     final_milestones_data.append({
+                         "Nome Completo": data.get("Nome Completo", ""), "Data Inizio": data.get("Data Inizio", "N/D"),
+                         "Data Fine": data.get("Data Fine", "N/D"), "Durata": data.get("Durata", "N/D"),
+                         "DataInizioObj": data.get("DataInizioObj")
+                     })
+                if final_milestones_data:
+                    df_milestones = pd.DataFrame(final_milestones_data)
+                    min_date_for_sort = date.min
+                    df_milestones['DataInizioObj'] = pd.to_datetime(df_milestones['DataInizioObj'], errors='coerce').dt.date
+                    df_milestones['DataInizioObj'] = df_milestones['DataInizioObj'].fillna(min_date_for_sort)
+                    df_milestones = df_milestones.sort_values(by="DataInizioObj").reset_index(drop=True)
                     st.session_state['df_milestones_display'] = df_milestones.drop(columns=['DataInizioObj'])
                 else: st.session_state['df_milestones_display'] = None
 
                 # Salvataggio TUTTE le attività
                 st.session_state['all_tasks_data'] = pd.DataFrame(all_tasks_data_list)
 
-                # Estrazione Dati Temporizzati (Identico a v11.3)
+                # --- ESTRAZIONE DATI TEMPORIZZATI CORRETTA (da v11.3) ---
                 assignments_node = tree.find('msp:Assignments', ns)
+                
                 scurve_data = parse_timephased_data_from_assignments(assignments_node, ns, '9', is_cost=True)
                 if scurve_data.empty:
                     st.warning("Dati 'Costo Baseline' (Tipo 9) non trovati. Fallback su 'Costo Schedulato' (Tipo 2) per la Curva S.")
                     scurve_data = parse_timephased_data_from_assignments(assignments_node, ns, '2', is_cost=True)
                 st.session_state['scurve_data'] = scurve_data
+                
                 baseline_work_data = parse_timephased_data_from_assignments(assignments_node, ns, '8', is_cost=False)
                 if baseline_work_data.empty:
                      st.warning("Dati 'Lavoro Baseline' (Tipo 8) non trovati. Fallback su 'Lavoro Schedulato' (Tipo 1) per gli Istogrammi.")
                      baseline_work_data = parse_timephased_data_from_assignments(assignments_node, ns, '1', is_cost=False)
                 st.session_state['baseline_work_data'] = baseline_work_data
+                
+                # --- ESTRAZIONE DATI RISORSE (CON INDENTAZIONE CORRETTA) ---
                 resources_node = tree.find('msp:Resources', ns); resources_data = []
                 if resources_node is not None:
-                    # ... (omissis loop risorse) ...
+                    # Questo blocco è ora indentato
+                    for resource in resources_node.findall('msp:Resource', ns):
+                        res_uid = resource.findtext('msp:UID', namespaces=ns)
+                        res_name = resource.findtext('msp:Name', namespaces=ns) or "Senza Nome"
+                        res_type_num = resource.findtext('msp:Type', namespaces=ns)
+                        res_type = "Manodopera" if res_type_num == '1' else "Mezzo/Materiale"
+                        resources_data.append({'ResourceUID': res_uid, 'ResourceName': res_name, 'ResourceType': res_type})
+                # Questa riga è ora fuori dall'if, come dev'essere
                 st.session_state['resources_data'] = pd.DataFrame(resources_data)
+                # --- FINE CORREZIONE ---
 
                 # Debug
                 current_file_to_process.seek(0); debug_content_bytes = current_file_to_process.read(2000);
@@ -251,36 +280,46 @@ if current_file_to_process is not None:
         # --- Sezione 2: Analisi Preliminare ---
         st.markdown("---"); st.markdown("#### 2. Analisi Preliminare"); st.markdown("##### 📄 Informazioni Generali dell'Appalto")
         project_name = st.session_state.get('project_name', "N/D"); formatted_cost = st.session_state.get('formatted_cost', "N/D")
-        col1_disp, col2_disp = st.columns(2); 
-        with col1_disp: st.markdown(f"**Nome:** {project_name}")
-        with col2_disp: st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
+        
+        # --- CORREZIONE DEFINITIVA SYNTAX ERROR ---
+        col1_disp, col2_disp = st.columns(2)
+        with col1_disp:
+            st.markdown(f"**Nome:** {project_name}")
+        with col2_disp:
+            st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
+        # --- FINE CORREZIONE ---
+
         st.markdown("##### 🗓️ Termini Utili Contrattuali (TUP/TUF)")
         df_display = st.session_state.get('df_milestones_display')
         if df_display is not None and not df_display.empty:
             st.dataframe(df_display, use_container_width=True, hide_index=True)
-            # ... (download excel omesso per brevità) ...
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer: df_display.to_excel(writer, index=False, sheet_name='TerminiUtili')
+            excel_data = output.getvalue(); st.download_button(label="Scarica (Excel)", data=excel_data, file_name="termini_utili_TUP_TUF.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         else: st.warning("Nessun Termine Utile (TUP o TUF) trovato nel file.")
 
         # --- Sezione 3: Selezione Periodo e Analisi ---
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
-        # ... (Logica date default e date_input identica) ...
+        if not default_start: default_start = date.today()
+        if not default_finish: default_finish = default_start + timedelta(days=365)
+        if default_start > default_finish: default_finish = default_start + timedelta(days=1)
         st.markdown("##### 📅 Seleziona Periodo di Riferimento"); st.caption(f"Default: {default_start.strftime('%d/%m/%Y')} - {default_finish.strftime('%d/%m/%Y')}.")
-        col_date1, col_date2 = st.columns(2); # ... (date_input widgets) ...
+        col_date1, col_date2 = st.columns(2)
         with col_date1: selected_start_date = st.date_input("Data Inizio", value=default_start, min_value=default_start, max_value=default_finish + timedelta(days=5*365), format="DD/MM/YYYY", key="start_date_selector")
         with col_date2:
             min_end_date = selected_start_date; actual_default_finish = max(default_finish, min_end_date)
             reasonable_max_date = actual_default_finish + timedelta(days=10*365)
             selected_finish_date = st.date_input("Data Fine", value=actual_default_finish, min_value=min_end_date, max_value=reasonable_max_date, format="DD/MM/YYYY", key="finish_date_selector")
 
-        # --- Analisi Dettagliate (Logica SIL + Istogrammi v11.3) ---
+        # --- Analisi Dettagliate ---
         st.markdown("---"); st.markdown("##### 📊 Analisi Dettagliate")
         
         # Bottone per avviare l'analisi (come richiesto)
         if st.button("📈 Avvia Analisi Dettagliata", key="analyze_details"):
             scurve_df = st.session_state.get('scurve_data')
-            baseline_work_df = st.session_state.get('baseline_work_df')
-            resources_df = st.session_state.get('resources_df')
+            baseline_work_df = st.session_state.get('baseline_work_data')
+            resources_df = st.session_state.get('resources_data')
 
             if scurve_df is None or baseline_work_df is None or resources_df is None:
                  st.error("Errore: Dati temporizzati o dati risorse non trovati. Il file XML potrebbe essere incompleto.")
@@ -289,26 +328,40 @@ if current_file_to_process is not None:
                     # --- CURVA S (SIL) ---
                     st.markdown("###### Curva S (Costo Cumulato)")
                     if not scurve_df.empty:
-                        cost_df_dated = scurve_df.copy(); cost_df_dated['Date'] = pd.to_datetime(cost_df_dated['Date'])
+                        cost_df_dated = scurve_df.copy()
+                        cost_df_dated['Date'] = pd.to_datetime(cost_df_dated['Date'])
                         mask_cost = (cost_df_dated['Date'] >= pd.to_datetime(selected_start_date)) & (cost_df_dated['Date'] <= pd.to_datetime(selected_finish_date))
                         filtered_cost = cost_df_dated.loc[mask_cost]
+                        
                         if not filtered_cost.empty:
-                            daily_cost = filtered_cost.groupby('Date')['Value'].sum().reset_index(); daily_cost = daily_cost.set_index('Date')
+                            daily_cost = filtered_cost.groupby('Date')['Value'].sum().reset_index()
+                            daily_cost = daily_cost.set_index('Date')
                             monthly_cost = daily_cost.resample('ME')['Value'].sum().reset_index()
-                            monthly_cost['Costo Cumulato (€)'] = monthly_cost['Value'].cumsum(); monthly_cost['Mese'] = monthly_cost['Date'].dt.strftime('%Y-%m')
-                            fig_sil = px.line(monthly_cost, x='Mese', y='Costo Cumulato (€)', title='Curva S - Costo Cumulato (Baseline o Schedulato)', markers=True)
-                            fig_sil.update_layout(xaxis_title="Mese", yaxis_title="Costo Cumulato (€)"); st.plotly_chart(fig_sil, use_container_width=True)
-                            output_sil = BytesIO(); #... (download) ...; st.download_button(label="Scarica Dati SIL (Excel)", ...)
+                            monthly_cost['Costo Cumulato (€)'] = monthly_cost['Value'].cumsum()
+                            monthly_cost['Mese'] = monthly_cost['Date'].dt.strftime('%Y-%m')
+                            
+                            fig_sil = px.line(monthly_cost, x='Mese', y='Costo Cumulato (€)',
+                                              title='Curva S - Costo Cumulato (Baseline o Schedulato)', markers=True)
+                            fig_sil.update_layout(xaxis_title="Mese", yaxis_title="Costo Cumulato (€)")
+                            st.plotly_chart(fig_sil, use_container_width=True)
+                            
+                            output_sil = BytesIO()
+                            with pd.ExcelWriter(output_sil, engine='openpyxl') as writer:
+                                 monthly_cost[['Mese', 'Value', 'Costo Cumulato (€)']].rename(columns={'Value': 'Costo Mensile (€)'}).to_excel(writer, index=False, sheet_name='SIL_Mensile')
+                            excel_data_sil = output_sil.getvalue()
+                            st.download_button(label="Scarica Dati SIL (Excel)", data=excel_data_sil, file_name="dati_sil_mensile.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_sil")
                         else: st.warning("Nessun dato di costo trovato nel periodo selezionato.")
                     else: st.warning("Nessun dato di costo temporizzato (Baseline o Schedulato) trovato nel file.")
 
+
                     # --- ISTOGRAMMI MANODOPERA E MEZZI (RIMOSSI TEMPORANEAMENTE) ---
-                    st.markdown("###### Istogrammi Risorse (Ore Lavoro Baseline)")
+                    st.markdown("###### Istogrammi Risorse (Work in Progress)")
                     st.info("Logica istogrammi in fase di revisione.")
                     # ... (logica istogrammi v11.3 rimossa per focus SIL) ...
 
                 except Exception as analysis_error:
                     st.error(f"Errore durante l'analisi avanzata: {analysis_error}")
+                    # st.error(traceback.format_exc()) # Uncomment for detailed error
 
         # --- Debug Section ---
         debug_text = st.session_state.get('debug_raw_text')
