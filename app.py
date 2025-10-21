@@ -1,4 +1,4 @@
-# --- v15.1 (Correzione NameError 'et', Aggiunto Svuota Cache) ---
+# --- v15.2 (Correzione KeyError 'DataIn_Obj') ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -11,7 +11,7 @@ import plotly.graph_objects as go # Importa Graph Objects per grafici combinati
 import traceback # Per debug avanzato
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v15.1", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v15.2", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -23,14 +23,13 @@ st.markdown("""
     .stApp .stMarkdown h5 { font-size: 0.90rem !important; margin-bottom: 0.5rem; margin-top: 0.8rem; }
     .stApp .stMarkdown h6 { font-size: 0.88rem !important; margin-bottom: 0.4rem; margin-top: 0.8rem; font-weight: bold;}
     
-    /* Modifica al CSS per i bottoni Reset e Cache per farli stare vicini */
     button[data-testid="stButton"][kind="primary"][key="reset_button"],
     button[data-testid="stButton"][kind="secondary"][key="clear_cache_button"] { 
         padding: 0.2rem 0.5rem !important; 
         line-height: 1.2 !important; 
-        font-size: 1.0rem !important; /* Leggermente più piccolo per far stare il testo */
+        font-size: 1.0rem !important; 
         border-radius: 0.25rem !important; 
-        margin-right: 5px; /* Aggiunge spazio tra i bottoni */
+        margin-right: 5px; 
     }
     button[data-testid="stButton"][kind="primary"][key="reset_button"]:disabled { cursor: not-allowed; opacity: 0.5; }
     
@@ -44,18 +43,16 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v15.1") # Version updated
+st.markdown("## 🚆 InfraTrack v15.2") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 
-# Colonne per affiancare i bottoni
-col_btn_1, col_btn_2, col_btn_3 = st.columns([0.1, 0.2, 0.7]) # Colonne per layout
+col_btn_1, col_btn_2, col_btn_3 = st.columns([0.1, 0.2, 0.7]) 
 
 with col_btn_1:
-    # --- GESTIONE RESET (Sessione) ---
     if st.button("🔄", key="reset_button", help="Resetta l'analisi (Svuota Sessione)", disabled=not st.session_state.file_processed_success):
         st.session_state.widget_key_counter += 1; st.session_state.file_processed_success = False
         keys_to_reset = list(st.session_state.keys())
@@ -66,7 +63,6 @@ with col_btn_1:
         st.rerun()
 
 with col_btn_2:
-    # --- GESTIONE CACHE (Dati temporanei) ---
     if st.button("🗑️ Svuota Cache", key="clear_cache_button", help="Elimina i dati temporanei (Forza ri-analisi @st.cache_data)"):
         st.cache_data.clear()
         st.toast("Cache dei dati svuotata!", icon="✅")
@@ -129,7 +125,6 @@ def extract_timephased_baseline_cost(_xml_tree, _namespaces):
     assignments = _xml_tree.findall('.//msp:Assignment', namespaces=_namespaces)
     
     for ass in assignments:
-        # Cerca i dati Timephased DENTRO la Baseline dell'assegnazione (Type "10" = Baseline Cost)
         timephased_nodes = ass.findall(
             './/msp:Baseline/msp:TimephasedData[msp:Type="10"]', 
             namespaces=_namespaces
@@ -147,7 +142,7 @@ def extract_timephased_baseline_cost(_xml_tree, _namespaces):
                     if cost_value > 0:
                         daily_cost_data.append({'Date': current_date, 'Value': cost_value})
                 except Exception:
-                    pass # Ignora nodi malformati
+                    pass 
 
     if not daily_cost_data:
         return pd.DataFrame(columns=['Date', 'Value'])
@@ -169,17 +164,14 @@ if current_file_to_process is not None:
             try:
                 current_file_to_process.seek(0); file_content_bytes = current_file_to_process.read()
                 
-                # --- [CORREZIONE] Da 'et' a 'etree' ---
                 parser = etree.XMLParser(recover=True)
                 tree = etree.fromstring(file_content_bytes, parser=parser)
-                # --- FINE CORREZIONE ---
                 
                 ns = {'msp': 'http://schemas.microsoft.com/project'}
 
                 minutes_per_day = get_minutes_per_day(tree, ns)
                 st.session_state['minutes_per_day'] = minutes_per_day
 
-                # Inizializza variabili
                 project_name = "N/D"; formatted_cost = "€ 0,00"; project_start_date = None; project_finish_date = None
                 
                 task_uid_1 = tree.find(".//msp:Task[msp:UID='1']", namespaces=ns)
@@ -261,7 +253,11 @@ if current_file_to_process is not None:
                     min_date_for_sort = date.min
                     df_milestones['DataInizioObj'] = pd.to_datetime(df_milestones['DataInizioObj'], errors='coerce').dt.date
                     df_milestones['DataInizioObj'] = df_milestones['DataInizioObj'].fillna(min_date_for_sort)
-                    df_milestones = df_milestones.sort_values(by="DataIn_Obj").reset_index(drop=True)
+                    
+                    # --- [CORREZIONE] da "DataIn_Obj" a "DataInizioObj" ---
+                    df_milestones = df_milestones.sort_values(by="DataInizioObj").reset_index(drop=True)
+                    # --- FINE CORREZIONE ---
+                    
                     st.session_state['df_milestones_display'] = df_milestones.drop(columns=['DataInizioObj'])
                 else: st.session_state['df_milestones_display'] = None
 
@@ -283,10 +279,8 @@ if current_file_to_process is not None:
                 st.rerun()
 
             except Exception as e:
-                # Stampa l'errore completo nel terminale/log
                 print(f"Errore Analisi: {e}")
                 print(traceback.format_exc())
-                # Mostra un messaggio chiaro all'utente
                 st.error(f"Errore Analisi durante elaborazione iniziale: {e}"); 
                 st.error(f"Traceback: {traceback.format_exc()}"); 
                 st.error("Verifica file XML."); 
@@ -371,7 +365,7 @@ if current_file_to_process is not None:
                         
                         output_sil = BytesIO()
                         with pd.ExcelWriter(output_sil, engine='openpyxl') as writer:
-                            monthly_cost[['Mese', 'Value', 'Costo Cumulato (€)']].rename(columns={'Value': 'Costo Mensile (€)'}).to_excel(writer, index=False, sheet_name='SIL_Mensile')
+                            monthly_cost[['Mese', 'Value', 'Costo Mensile (€)']].rename(columns={'Value': 'Costo Mensile (€)'}).to_excel(writer, index=False, sheet_name='SIL_Mensile')
                         excel_data_sil = output_sil.getvalue()
                         st.download_button(label="Scarica Dati SIL (Excel)", data=excel_data_sil, file_name="dati_sil_mensile.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_sil")
 
