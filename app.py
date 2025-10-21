@@ -1,4 +1,4 @@
-# --- v18.2 (Correzione SyntaxError riga 509) ---
+# --- v18.2 (Correzione Finale SyntaxError) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -29,7 +29,8 @@ except locale.Error:
         try: locale.setlocale(locale.LC_TIME, '')
         except locale.Error:
              if not _locale_warning_shown:
-                st.warning("Impossibile impostare qualsiasi locale per i nomi dei mesi.")
+                #st.warning("Impossibile impostare qualsiasi locale per i nomi dei mesi.")
+                print("WARNING: Impossibile impostare qualsiasi locale per i nomi dei mesi.") # Meno invasivo
                 _locale_warning_shown = True
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
@@ -420,7 +421,7 @@ if current_file_to_process is not None:
                                     date_format_display = '%d/%m/%Y'; date_format_excel = '%d/%m/%Y'
                                     aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime(date_format_display)
                                     axis_title = "Giorno"; col_name = "Costo Giornaliero (€)"
-                                    # --- [CORREZIONE v18.1] Rimosso else superfluo ---
+                                    # --- [CORREZIONE v18.2] Rimuove 'else:' superfluo ---
                                     display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', col_summary_name]
                                     plot_custom_data = aggregated_data[col_summary_name]
                                     excel_filename = "Dati_SIL_Giornalieri.xlsx"
