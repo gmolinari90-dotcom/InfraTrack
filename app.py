@@ -1,4 +1,4 @@
-# --- v17.14 (Forza Tema Colori Plotly per Export Immagine) ---
+# --- v17.15 (Nomi File Excel, Imposta Template Grafico in update_layout) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -14,6 +14,8 @@ import locale
 try:
     import plotly.io as pio
     from openpyxl.drawing.image import Image
+    # Non impostiamo più il default qui, lo facciamo nel grafico
+    # pio.templates.default = "plotly"
     _kaleido_installed = True
 except ImportError:
     _kaleido_installed = False
@@ -33,7 +35,7 @@ except locale.Error:
                 _locale_warning_shown = True
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v17.14", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v17.15", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 # ... (CSS invariato v17.12) ...
@@ -59,7 +61,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v17.14") # Version updated
+st.markdown("## 🚆 InfraTrack v17.15") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -78,7 +80,6 @@ with col_btn_1:
 with col_btn_2:
     if st.button("🗑️ Svuota Cache", key="clear_cache_button", help="Elimina i dati temporanei calcolati (Forza ri-analisi @st.cache_data)"):
         st.cache_data.clear(); st.toast("Cache dei dati svuotata! I dati verranno ricalcolati alla prossima analisi.", icon="✅")
-
 
 # --- CARICAMENTO FILE ---
 # ... (Codice invariato v17.9) ...
@@ -329,8 +330,9 @@ if current_file_to_process is not None:
             excel_data = output.getvalue(); st.download_button(label="Scarica TUP/TUF (Excel)", data=excel_data, file_name="termini_utili_TUP_TUF.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_tup")
         else: st.warning("Nessun Termine Utile (TUP o TUF) trovato nel file.")
 
+
         # --- Sezione 3: Selezione Periodo e Analisi ---
-        # ... (Codice invariato fino al bottone Analisi) ...
+        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
         if not default_start: default_start = date.today()
@@ -343,13 +345,9 @@ if current_file_to_process is not None:
             min_end_date = selected_start_date; actual_default_finish = max(default_finish, min_end_date)
             reasonable_max_date = actual_default_finish + timedelta(days=10*365)
             selected_finish_date = st.date_input("Data Fine", value=actual_default_finish, min_value=min_end_date, max_value=reasonable_max_date, format="DD/MM/YYYY", key="finish_date_selector")
-
         st.markdown("##### 📦 Seleziona Aggregazione Dati")
-        aggregation_level = st.radio(
-            "Scegli il livello di dettaglio per l'analisi:",
-            ('Mensile', 'Giornaliera'), key="aggregation_selector", horizontal=True,
-            help="Scegli 'Giornaliera' per visualizzare i dettagli e il nome del riepilogo WBS."
-        )
+        aggregation_level = st.radio("Scegli il livello di dettaglio per l'analisi:", ('Mensile', 'Giornaliera'), key="aggregation_selector", horizontal=True, help="Scegli 'Giornaliera' per visualizzare i dettagli e il nome del riepilogo WBS.")
+
 
         # --- Analisi Dettagliate ---
         st.markdown("---"); st.markdown("##### 📊 Analisi Dettagliate")
@@ -389,6 +387,7 @@ if current_file_to_process is not None:
                             col_summary_name = "Riepilogo WBS"
                             date_format_display = ""
                             date_format_excel = ""
+                            excel_filename = "" # <<<<<<<<<<<<< NUOVO: Nome file Excel
 
                             if aggregation_level == 'Mensile':
                                 aggregated_values = filtered_cost.set_index('Date')['Value'].resample('ME').sum().reset_index()
@@ -397,6 +396,7 @@ if current_file_to_process is not None:
                                 aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime(date_format_display).str.capitalize()
                                 axis_title = "Mese"; col_name = "Costo Mensile (€)"
                                 display_columns = ['Periodo', col_name, 'Costo Cumulato (€)']
+                                excel_filename = "Dati_SIL_Mensili.xlsx" # <<<<<<<<<<<<< Nome file
                             else: # 'Giornaliera'
                                 aggregated_daily = filtered_cost.groupby('Date').agg(
                                     Value=('Value', 'sum'),
@@ -411,6 +411,7 @@ if current_file_to_process is not None:
                                 axis_title = "Giorno"; col_name = "Costo Giornaliero (€)"
                                 display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', col_summary_name]
                                 plot_custom_data = aggregated_data[col_summary_name]
+                                excel_filename = "Dati_SIL_Giornalieri.xlsx" # <<<<<<<<<<<<< Nome file
 
                             aggregated_data['Costo Cumulato (€)'] = aggregated_data['Value'].cumsum()
 
@@ -431,7 +432,19 @@ if current_file_to_process is not None:
                                 hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>'
                             fig_sil.add_trace(go.Bar(x=aggregated_data['Periodo'], y=aggregated_data['Value'], name=f'Costo {aggregation_level}', customdata=plot_custom_data, hovertemplate=hovertemplate_bar))
                             fig_sil.add_trace(go.Scatter(x=aggregated_data['Periodo'], y=aggregated_data['Costo Cumulato (€)'], name=f'Costo Cumulato', mode='lines+markers', yaxis='y2', customdata=plot_custom_data, hovertemplate=hovertemplate_scatter))
-                            fig_sil.update_layout(title=f'Curva S - Costo {aggregation_level.replace("a", "o")} e Cumulato', xaxis_title=axis_title, yaxis=dict(title=f"Costo {aggregation_level.replace('a', 'o')} (€)"), yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"), legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01), hovermode="x unified")
+
+                            # --- [MODIFICATO v17.15] Imposta template qui ---
+                            fig_sil.update_layout(
+                                title=f'Curva S - Costo {aggregation_level.replace("a", "o")} e Cumulato',
+                                xaxis_title=axis_title,
+                                yaxis=dict(title=f"Costo {aggregation_level.replace('a', 'o')} (€)"),
+                                yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"),
+                                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+                                hovermode="x unified",
+                                template="plotly" # <<< Forza template colori
+                            )
+                            # --- FINE MODIFICA ---
+
                             st.plotly_chart(fig_sil, use_container_width=True)
 
                             # --- EXPORT EXCEL ---
@@ -468,7 +481,14 @@ if current_file_to_process is not None:
                                     except Exception as img_err: st.warning(f"Impossibile esportare il grafico in Excel (errore Kaleido/Plotly): {img_err}")
                                 else: st.warning("Pacchetto 'kaleido' non trovato. Impossibile esportare il grafico in Excel. Aggiungilo a requirements.txt e reinstalla.")
                             excel_data_sil = output_sil.getvalue()
-                            st.download_button(label=f"Scarica Dati SIL ({aggregation_level})", data=excel_data_sil, file_name=f"dati_sil_{aggregation_level.lower()}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_sil")
+
+                            # --- [MODIFICATO v17.15] Nome file Excel ---
+                            st.download_button(label=f"Scarica Dati SIL ({aggregation_level})",
+                                               data=excel_data_sil,
+                                               file_name=excel_filename, # Usa il nome file definito prima
+                                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                               key="download_sil")
+                            # --- FINE MODIFICA ---
 
                             # --- DEBUG ---
                             # ... (Debug invariato) ...
