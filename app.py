@@ -11,12 +11,12 @@ import plotly.graph_objects as go
 import traceback
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v13.4", page_icon="🚆", layout="wide")
+st.set_page_config(page_title="InfraTrack v13.4", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
 <style>
-    /* ... (CSS identico - omesso per brevità) ... */
+    /* Stili CSS stabili */
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button { font-size: 0.85rem !important; }
     .stApp h2 { font-size: 1.5rem !important; }
     .stApp .stMarkdown h4 { font-size: 1.1rem !important; margin-bottom: 0.5rem; margin-top: 1rem; }
@@ -34,7 +34,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v13.4")
+st.markdown("## 🚆 InfraTrack v13.4") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
@@ -65,7 +65,7 @@ elif 'uploaded_file_state' not in st.session_state:
 # --- FUNZIONI HELPER (definite globalmente) ---
 @st.cache_data
 def get_minutes_per_day(_tree, _ns):
-    minutes_per_day = 480
+    minutes_per_day = 480 # Default 8 ore
     try:
         default_calendar = _tree.find(".//msp:Calendar[msp:UID='1']", namespaces=_ns)
         if default_calendar is not None:
@@ -81,7 +81,8 @@ def get_minutes_per_day(_tree, _ns):
                                  working_minutes += delta.total_seconds() / 60
                             except ValueError: pass
                   if working_minutes > 0: minutes_per_day = working_minutes
-    except Exception: pass
+    except Exception:
+        pass
     return minutes_per_day
 
 def format_duration_from_xml(duration_str):
@@ -95,17 +96,21 @@ def format_duration_from_xml(duration_str):
          work_days = total_hours / (mpd / 60.0); return f"{round(work_days)}g"
      except Exception: return "N/D"
 
+# --- FUNZIONE ESTRAZIONE DATI TEMPORIZZATI CORRETTA ---
 @st.cache_data
 def extract_timephased_data_from_assignments(_assignments_node, _ns, data_type, is_cost=False):
     """
     Estrae dati timephased (Lavoro o Costo) dal NODO ASSIGNMENTS.
-    data_type: '1', '2', '8', '9'
+    data_type: '1' (Lavoro), '2' (Costo), '8' (Lavoro Baseline), '9' (Costo Baseline)
     """
     data = []
     if _assignments_node is None:
-        return pd.DataFrame(data, columns=['Date', 'Value'])
+        return pd.DataFrame(data, columns=['TaskUID', 'ResourceUID', 'Date', 'Value'])
 
     for assignment in _assignments_node.findall('msp:Assignment', _ns):
+        task_uid = assignment.findtext('msp:TaskUID', namespaces=_ns)
+        resource_uid = assignment.findtext('msp:ResourceUID', namespaces=_ns)
+        
         timephased_data_block = assignment.find(f"msp:TimephasedData[msp:Type='{data_type}']", _ns)
         
         if timephased_data_block is not None:
@@ -117,23 +122,33 @@ def extract_timephased_data_from_assignments(_assignments_node, _ns, data_type, 
                     if start_str and value_str and value_str != "0":
                         start_date = datetime.fromisoformat(start_str).date()
                         value = 0.0
+                        
                         if is_cost:
                             value = float(value_str) / 100.0 # Costo è in centesimi
-                        else:
-                            duration_obj = isodate.parse_duration(value_str)
+                        else: # È Lavoro
+                            duration_obj = isodate.parse_duration(value_str) # Lavoro è in formato PT...H...M...S
                             value = duration_obj.total_seconds() / 3600 # Converti in ore
+                        
                         if value > 0:
-                            data.append({'Date': start_date, 'Value': value})
+                            data.append({
+                                'TaskUID': task_uid,
+                                'ResourceUID': resource_uid,
+                                'Date': start_date, # Data di inizio del periodo
+                                'Value': value
+                            })
                 except Exception as e:
-                    continue
+                    continue # Ignora periodo malformato
                     
     if not data:
-        return pd.DataFrame(data, columns=['Date', 'Value'])
-    
+        return pd.DataFrame(data, columns=['TaskUID', 'ResourceUID', 'Date', 'Value'])
+
+    # Aggrega i dati per data (somma di tutte le assegnazioni per quel giorno)
     df = pd.DataFrame(data)
     df['Date'] = pd.to_datetime(df['Date'])
     daily_df = df.groupby('Date')['Value'].sum().reset_index()
+    
     return daily_df
+# --- FINE FUNZIONE ---
 
 
 # --- INIZIO ANALISI ---
