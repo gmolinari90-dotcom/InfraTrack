@@ -1,4 +1,4 @@
-# --- v13.3 (Logica SIL/Istogrammi Corretta + Fix Sintassi Definitivi) ---
+# --- v13.4 (Logica SIL Robusta + Debug Avanzato) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -11,12 +11,12 @@ import plotly.graph_objects as go
 import traceback
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v13.3", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v13.4", page_icon="🚆", layout="wide")
 
 # --- CSS ---
 st.markdown("""
 <style>
-    /* Stili CSS stabili */
+    /* ... (CSS identico - omesso per brevità) ... */
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button { font-size: 0.85rem !important; }
     .stApp h2 { font-size: 1.5rem !important; }
     .stApp .stMarkdown h4 { font-size: 1.1rem !important; margin-bottom: 0.5rem; margin-top: 1rem; }
@@ -34,7 +34,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v13.3") # Version updated
+st.markdown("## 🚆 InfraTrack v13.4")
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET ---
@@ -65,7 +65,7 @@ elif 'uploaded_file_state' not in st.session_state:
 # --- FUNZIONI HELPER (definite globalmente) ---
 @st.cache_data
 def get_minutes_per_day(_tree, _ns):
-    minutes_per_day = 480 # Default 8 ore
+    minutes_per_day = 480
     try:
         default_calendar = _tree.find(".//msp:Calendar[msp:UID='1']", namespaces=_ns)
         if default_calendar is not None:
@@ -81,8 +81,7 @@ def get_minutes_per_day(_tree, _ns):
                                  working_minutes += delta.total_seconds() / 60
                             except ValueError: pass
                   if working_minutes > 0: minutes_per_day = working_minutes
-    except Exception:
-        pass
+    except Exception: pass
     return minutes_per_day
 
 def format_duration_from_xml(duration_str):
@@ -96,21 +95,17 @@ def format_duration_from_xml(duration_str):
          work_days = total_hours / (mpd / 60.0); return f"{round(work_days)}g"
      except Exception: return "N/D"
 
-# --- FUNZIONE ESTRAZIONE DATI TEMPORIZZATI CORRETTA ---
 @st.cache_data
 def extract_timephased_data_from_assignments(_assignments_node, _ns, data_type, is_cost=False):
     """
     Estrae dati timephased (Lavoro o Costo) dal NODO ASSIGNMENTS.
-    data_type: '1' (Lavoro), '2' (Costo), '8' (Lavoro Baseline), '9' (Costo Baseline)
+    data_type: '1', '2', '8', '9'
     """
     data = []
     if _assignments_node is None:
-        return pd.DataFrame(data, columns=['TaskUID', 'ResourceUID', 'Date', 'Value'])
+        return pd.DataFrame(data, columns=['Date', 'Value'])
 
     for assignment in _assignments_node.findall('msp:Assignment', _ns):
-        task_uid = assignment.findtext('msp:TaskUID', namespaces=_ns)
-        resource_uid = assignment.findtext('msp:ResourceUID', namespaces=_ns)
-        
         timephased_data_block = assignment.find(f"msp:TimephasedData[msp:Type='{data_type}']", _ns)
         
         if timephased_data_block is not None:
@@ -122,33 +117,23 @@ def extract_timephased_data_from_assignments(_assignments_node, _ns, data_type, 
                     if start_str and value_str and value_str != "0":
                         start_date = datetime.fromisoformat(start_str).date()
                         value = 0.0
-                        
                         if is_cost:
                             value = float(value_str) / 100.0 # Costo è in centesimi
-                        else: # È Lavoro
-                            duration_obj = isodate.parse_duration(value_str) # Lavoro è in formato PT...H...M...S
+                        else:
+                            duration_obj = isodate.parse_duration(value_str)
                             value = duration_obj.total_seconds() / 3600 # Converti in ore
-                        
                         if value > 0:
-                            data.append({
-                                'TaskUID': task_uid,
-                                'ResourceUID': resource_uid,
-                                'Date': start_date, # Data di inizio del periodo
-                                'Value': value
-                            })
+                            data.append({'Date': start_date, 'Value': value})
                 except Exception as e:
-                    continue # Ignora periodo malformato
+                    continue
                     
     if not data:
-        return pd.DataFrame(data, columns=['TaskUID', 'ResourceUID', 'Date', 'Value'])
-
-    # Aggrega i dati per data (somma di tutte le assegnazioni per quel giorno)
+        return pd.DataFrame(data, columns=['Date', 'Value'])
+    
     df = pd.DataFrame(data)
     df['Date'] = pd.to_datetime(df['Date'])
     daily_df = df.groupby('Date')['Value'].sum().reset_index()
-    
     return daily_df
-# --- FINE FUNZIONE ---
 
 
 # --- INIZIO ANALISI ---
@@ -197,22 +182,20 @@ if current_file_to_process is not None:
                     wbs = task.findtext('msp:WBS', namespaces=ns) or ""
                     total_slack_minutes_str = task.findtext('msp:TotalSlack', namespaces=ns) or "0"
                     
-                    # --- Calcolo Slack con try/except CORRETTO ---
-                    total_slack_days = 0
+                    total_slack_days = 0 # Calcolo Slack con try/except corretto
                     if total_slack_minutes_str:
-                        try: # Blocco try
+                        try:
                             slack_minutes = float(total_slack_minutes_str)
                             mpd = st.session_state.get('minutes_per_day', 480)
                             if mpd > 0:
                                 total_slack_days = math.ceil(slack_minutes / mpd)
-                        except ValueError: # Blocco except CORRETTAMENTE ALLINEATO
+                        except ValueError:
                             total_slack_days = 0
-                    # --- FINE CALCOLO SLACK ---
 
                     if uid != '0':
                          all_tasks_data_list.append({"UID": uid, "Name": name, "Start": start_date, "Finish": finish_date, "Duration": duration_formatted, "Cost": cost_euros, "Milestone": is_milestone, "WBS": wbs, "TotalSlackDays": total_slack_days})
 
-                    # --- Logica TUP/TUF con INDENTAZIONE CORRETTA ---
+                    # Logica TUP/TUF (con indentazione CORRETTA)
                     match = tup_tuf_pattern.search(name)
                     if match:
                          tup_tuf_key = match.group(0).upper().strip(); duration_str_tup = task.findtext('msp:Duration', namespaces=ns)
@@ -225,16 +208,13 @@ if current_file_to_process is not None:
                          start_date_formatted = start_date.strftime("%d/%m/%Y") if start_date else "N/D"; finish_date_formatted = finish_date.strftime("%d/%m/%Y") if finish_date else "N/D"
                          current_task_data = {"Nome Completo": name, "Data Inizio": start_date_formatted, "Data Fine": finish_date_formatted, "Durata": duration_formatted, "DurataSecondi": duration_seconds, "DataInizioObj": start_date}
                          existing_duration_seconds = potential_milestones.get(tup_tuf_key, {}).get("DurataSecondi", -1)
-                         
                          if tup_tuf_key not in potential_milestones:
                               potential_milestones[tup_tuf_key] = current_task_data
                          elif not is_pure_milestone_duration:
                               if existing_duration_seconds == 0:
                                    potential_milestones[tup_tuf_key] = current_task_data
                               elif duration_seconds > existing_duration_seconds:
-                                   # Indentazione CORRETTA
                                    potential_milestones[tup_tuf_key] = current_task_data
-                    # --- FINE LOGICA TUP/TUF ---
 
                 # Salvataggio dati TUP/TUF
                 final_milestones_data = []
@@ -304,20 +284,16 @@ if current_file_to_process is not None:
         st.markdown("---"); st.markdown("#### 2. Analisi Preliminare"); st.markdown("##### 📄 Informazioni Generali dell'Appalto")
         project_name = st.session_state.get('project_name', "N/D"); formatted_cost = st.session_state.get('formatted_cost', "N/D")
         
-        # --- CORREZIONE DEFINITIVA SYNTAX ERROR ---
         col1_disp, col2_disp = st.columns(2)
         with col1_disp:
             st.markdown(f"**Nome:** {project_name}")
         with col2_disp:
             st.markdown(f"**Importo Totale Lavori:** {formatted_cost}")
-        # --- FINE CORREZIONE ---
 
         st.markdown("##### 🗓️ Termini Utili Contrattuali (TUP/TUF)")
         df_display = st.session_state.get('df_milestones_display')
         if df_display is not None and not df_display.empty:
-            # --- CORREZIONE ORDINE COLONNE ---
-            st.dataframe(df_display[["Nome Completo", "Durata", "Data Inizio", "Data Fine"]], use_container_width=True, hide_index=True)
-            # --- FINE CORREZIONE ---
+            st.dataframe(df_display, use_container_width=True, hide_index=True)
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer: df_display.to_excel(writer, index=False, sheet_name='TerminiUtili')
             excel_data = output.getvalue(); st.download_button(label="Scarica (Excel)", data=excel_data, file_name="termini_utili_TUP_TUF.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -351,6 +327,8 @@ if current_file_to_process is not None:
             elif scurve_df.empty:
                  # Questo è l'errore che ricevi ora.
                  st.warning("Nessun dato di costo temporizzato (Baseline o Schedulato) trovato nel file. Impossibile generare la Curva S.")
+                 st.markdown("**Azione richiesta:** Prova a riesportare il file XML da MS Project seguendo questa procedura:")
+                 st.markdown("1. Apri il progetto in MS Project.\n2. Vai alla vista **`Utilizzo Attività`** (Task Usage).\n3. Clicca col destro sull'intestazione di una colonna e scegli **`Inserisci Colonna...`**.\n4. Aggiungi la colonna **`Costo Baseline`** (Baseline Cost).\n5. **ORA** salva come file XML e ricaricalo qui.")
             else:
                 try:
                     # --- CURVA S (SIL) ---
