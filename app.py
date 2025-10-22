@@ -1,4 +1,4 @@
-# --- v19.14 (Correzione Errore Indentazione Debug, Formato Date Originale) ---
+# --- v19.15 (Correzione Errore Indentazione Debug, Formato Mesi ITA) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -20,10 +20,15 @@ except ImportError:
 import openpyxl.utils
 import plotly.express as px
 
-# --- Rimosse dipendenze locale ---
+# --- [NUOVO v19.15] Mappa Mesi Italiani ---
+italian_month_map = {
+    1: 'Gen', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'Mag', 6: 'Giu',
+    7: 'Lug', 8: 'Ago', 9: 'Set', 10: 'Ott', 11: 'Nov', 12: 'Dic'
+}
+# --- Rimosso blocco locale.setlocale ---
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v19.14", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v19.15", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 # ... (CSS invariato v17.12) ...
@@ -54,7 +59,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v19.14") # Version updated
+st.markdown("## 🚆 InfraTrack v19.15") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -422,7 +427,7 @@ if current_file_to_process is not None:
                             if not filtered_cost.empty:
                                 aggregated_data = pd.DataFrame(); display_columns = []; plot_custom_data = None; col_summary_name = "Riepilogo WBS"; date_format_display = ""; date_format_excel = ""; excel_filename = ""
                                 
-                                # --- [MODIFICATO v19.14] Formato Mese ITA ---
+                                # --- [MODIFICATO v19.13] Formato Mese ITA ---
                                 if aggregation_level == 'Mensile':
                                     aggregated_values = filtered_cost.set_index('Date')['Value'].resample('ME').sum().reset_index()
                                     aggregated_values = aggregated_values.sort_values(by='Date') # <<< Ordina
@@ -476,11 +481,12 @@ if current_file_to_process is not None:
                             else: st.warning(f"Nessun dato di costo trovato nel periodo selezionato.")
                 except Exception as analysis_error: st.error(f"Errore Analisi Avanzata: {analysis_error}"); st.error(traceback.format_exc())
 
-        # --- [MODIFICATO v19.14] Sezione Istogrammi Risorse ---
+        # --- [MODIFICATO v19.13] Sezione Istogrammi Risorse ---
         st.markdown("---")
         st.markdown("###### 📊 Istogrammi Risorse (Unità Medie Giornaliere eq. 8h)")
 
-        resource_type_options = ['Manodopera', 'Mezzi', 'Altro'] # "Tutte" rimosso
+        # --- Opzione "Tutte" rimossa ---
+        resource_type_options = ['Manodopera', 'Mezzi', 'Altro']
         selected_resource_type = st.selectbox(
             "Seleziona il tipo di risorsa da analizzare:",
             resource_type_options,
@@ -582,7 +588,7 @@ if current_file_to_process is not None:
                                 output_hist = BytesIO()
                                 df_export_hist = aggregated_hist.copy()
                                 rename_map_excel_hist = {'Periodo': axis_title_hist, 'AvgDailyUnits_Rounded': col_name_hist, 'ResourceName': 'Risorsa'}
-                                #df_export_hist['Date'] = df_export_hist['Date'].dt.strftime(date_format_excel_hist).str.capitalize() if aggregation_level=='Mensile' else df_export_hist['Date'].dt.strftime(date_format_excel_hist)
+                                # df_export_hist['Date'] = df_export_hist['Date'].dt.strftime(date_format_excel_hist).str.capitalize() if aggregation_level=='Mensile' else df_export_hist['Date'].dt.strftime(date_format_excel_hist)
                                 df_to_write_hist = df_export_hist[['Periodo', 'ResourceName', 'AvgDailyUnits_Rounded']]
                                 df_to_write_hist = df_to_write_hist.rename(columns=rename_map_excel_hist)
 
@@ -686,10 +692,10 @@ if current_file_to_process is not None:
 
 
                 except Exception as analysis_error_hist:
-                    st.error(f"Errore durante l'analisi degli istogrammi: {analysis_error_hist}")
+                    st.error(f"Errore during l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
 
-        # --- [MODIFICATO v19.14] Debug Raggruppato ---
+        # --- [MODIFICATO v19.13] Debug Raggruppato ---
         st.markdown("---")
         with st.expander("🔍 Area Debug (Avanzato)", collapsed=True):
             st.markdown("##### Debug: Classificazione Risorse")
