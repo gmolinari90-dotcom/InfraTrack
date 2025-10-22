@@ -1,4 +1,4 @@
-# --- v19.8 (Priorità Manodopera, Rimozione Unità Testo) ---
+# --- v19.9 (Arrotondamento Standard .round(), Mostra solo Interi) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -6,7 +6,7 @@ from datetime import datetime, date, timedelta
 import re
 import isodate
 from io import BytesIO
-import math
+import math # Tenuto per lo slack
 import plotly.graph_objects as go
 import traceback
 import os
@@ -34,7 +34,7 @@ except locale.Error:
                 _locale_warning_shown = True
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v19.8", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v19.9", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 # ... (CSS invariato v17.12) ...
@@ -62,7 +62,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v19.8") # Version updated
+st.markdown("## 🚆 InfraTrack v19.9") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -94,6 +94,7 @@ elif 'uploaded_file_state' not in st.session_state: uploaded_file = None
 
 # --- FUNZIONI HELPER ---
 # ... (get_minutes_per_day, format_duration_from_xml, get_tasks_to_distribute_for_sil, get_relevant_summary_name invariate) ...
+# ... (classify_resource, extract_timephased_work invariate da v19.8) ...
 @st.cache_data
 def get_minutes_per_day(_tree, _ns):
     minutes_per_day = 480
@@ -193,7 +194,6 @@ def get_relevant_summary_name(wbs_list, wbs_map):
             return f"Riepilogo: {common_wbs}"
     except Exception: return "Attività Multiple"
 
-# --- [MODIFICATO v19.8] Classificazione Risorse (Priorità Manodopera) ---
 LABOR_KEYWORDS = [
     'operaio', 'ope ', 'addetto', 'squadra', 'assistente', 'tecnico', 'capo',
     'resp', 'ingegnere', 'geometra', 'sorvegliante', 'pilota', 'gruista',
@@ -209,24 +209,14 @@ EQUIPMENT_KEYWORDS = [
 ]
 
 def classify_resource(resource_name):
-    """Classifica una risorsa in 'Manodopera', 'Mezzi' o 'Altro'."""
     if not resource_name: return 'Altro'
     name_lower = resource_name.lower().strip()
-    
-    # <<< PRIORITÀ INVERTITA >>>
-    # 1. Controlla Manodopera
-    if any(keyword in name_lower for keyword in LABOR_KEYWORDS):
-        return 'Manodopera'
-    # 2. Controlla Mezzi
-    if any(keyword in name_lower for keyword in EQUIPMENT_KEYWORDS):
-        return 'Mezzi'
-    # 3. Fallback
+    if any(keyword in name_lower for keyword in LABOR_KEYWORDS): return 'Manodopera'
+    if any(keyword in name_lower for keyword in EQUIPMENT_KEYWORDS): return 'Mezzi'
     return 'Altro'
-# --- FINE MODIFICA ---
 
 @st.cache_data
 def extract_timephased_work(_xml_tree, _namespaces, _resource_map):
-    # ... (Funzione invariata da v19.1) ...
     daily_work_data = []
     assignments = _xml_tree.findall('.//msp:Assignment', namespaces=_namespaces)
     for ass in assignments:
@@ -234,7 +224,7 @@ def extract_timephased_work(_xml_tree, _namespaces, _resource_map):
         if resource_uid_node is None or resource_uid_node.text is None: continue
         resource_uid = resource_uid_node.text
         resource_name = _resource_map.get(resource_uid, '')
-        resource_type = classify_resource(resource_name) # <<< Usa nuova logica di classificazione
+        resource_type = classify_resource(resource_name)
         timephased_nodes = ass.findall('./msp:TimephasedData[msp:Type="1"]', namespaces=_namespaces)
         for node in timephased_nodes:
             start_date_str = node.findtext('msp:Start', namespaces=_namespaces)
@@ -253,7 +243,6 @@ def extract_timephased_work(_xml_tree, _namespaces, _resource_map):
     if not daily_work_data: return pd.DataFrame(columns=['Date', 'ResourceUID', 'ResourceType', 'WorkMinutes'])
     daily_df = pd.DataFrame(daily_work_data); daily_df['Date'] = pd.to_datetime(daily_df['Date'])
     return daily_df
-
 
 # --- INIZIO ANALISI ---
 current_file_to_process = st.session_state.get('uploaded_file_state')
@@ -478,7 +467,7 @@ if current_file_to_process is not None:
                             else: st.warning(f"Nessun dato di costo trovato nel periodo selezionato.")
                 except Exception as analysis_error: st.error(f"Errore Analisi Avanzata: {analysis_error}"); st.error(traceback.format_exc())
 
-        # --- [MODIFICATO v19.8] Sezione Istogrammi Risorse ---
+        # --- [MODIFICATO v19.9] Sezione Istogrammi Risorse ---
         st.markdown("---")
         st.markdown("###### 📊 Istogrammi Risorse (Unità Medie Giornaliere eq. 8h)")
 
@@ -520,7 +509,7 @@ if current_file_to_process is not None:
                             date_format_display_hist = '%b-%y' if aggregation_level == 'Mensile' else '%d/%m/%Y'
                             date_format_excel_hist = '%b-%y' if aggregation_level == 'Mensile' else '%d/%m/%Y'
                             axis_title_hist = "Mese" if aggregation_level == 'Mensile' else "Giorno"
-                            col_name_hist = f"Unità Media Giorn." # Nome colonna semplificato
+                            col_name_hist = f"Unità Media Giorn."
                             excel_filename_hist = f"Istogramma_UnitaMediaGiorn_{selected_resource_type.replace(' ', '_')}_{aggregation_level}.xlsx"
                             df_pivot_export = None
 
@@ -539,7 +528,7 @@ if current_file_to_process is not None:
 
                                 aggregated_hist = aggregated_hist.sort_values(by=['Date', 'ResourceName'])
                                 aggregated_hist['Periodo'] = aggregated_hist['Date'].dt.strftime(date_format_display_hist).str.capitalize()
-                                aggregated_hist['AvgDailyUnits_Rounded'] = aggregated_hist['AvgDailyUnits'].apply(math.ceil) # Arrotonda
+                                aggregated_hist['AvgDailyUnits_Rounded'] = aggregated_hist['AvgDailyUnits'].round() # <<< Arrotondamento standard
 
                                 # --- VISUALIZZAZIONE MEZZI ---
                                 st.markdown(f"###### Tabella Dettaglio Unità Medie Giorn. Mezzi ({aggregation_level})")
@@ -549,7 +538,7 @@ if current_file_to_process is not None:
 
                                 try:
                                     pivot_table = pd.pivot_table(df_display_hist, values=col_name_hist, index='Periodo', columns='ResourceName', aggfunc='first', fill_value="0")
-                                    st.dataframe(pivot_table.astype(int), use_container_width=True) # Mostra come interi
+                                    st.dataframe(pivot_table.astype(int), use_container_width=True)
                                 except Exception:
                                     st.dataframe(df_display_hist[['Periodo', 'ResourceName', col_name_hist]], use_container_width=True, hide_index=True)
 
@@ -559,9 +548,11 @@ if current_file_to_process is not None:
                                 resource_names = aggregated_hist['ResourceName'].unique()
                                 for i, name in enumerate(resource_names):
                                     group = aggregated_hist[aggregated_hist['ResourceName'] == name]
+                                    group_plot = group.copy()
+                                    group_plot['AvgDailyUnits_Rounded'] = group_plot['AvgDailyUnits'].round() # <<< Arrotondamento standard
                                     fig_hist.add_trace(go.Bar(
-                                        x=group['Periodo'],
-                                        y=group['AvgDailyUnits_Rounded'], # Usa arrotondato
+                                        x=group_plot['Periodo'],
+                                        y=group_plot['AvgDailyUnits_Rounded'],
                                         name=name,
                                         marker_color=colors[i % len(colors)],
                                         hovertemplate=f'<b>{axis_title_hist}</b>: %{{x}}<br><b>Mezzo</b>: {name}<br><b>Unità Media Giorn.</b>: %{{y:,.0f}}<extra></extra>' # Tooltip intero
@@ -581,6 +572,7 @@ if current_file_to_process is not None:
                                 # --- EXPORT EXCEL MEZZI ---
                                 output_hist = BytesIO()
                                 df_export_hist = aggregated_hist.copy()
+                                df_export_hist['AvgDailyUnits_Rounded'] = df_export_hist['AvgDailyUnits'].round() # <<< Arrotondamento standard
                                 rename_map_excel_hist = {'Date': axis_title_hist, 'AvgDailyUnits_Rounded': col_name_hist, 'ResourceName': 'Mezzo'}
                                 df_export_hist['Date'] = df_export_hist['Date'].dt.strftime(date_format_excel_hist).str.capitalize() if aggregation_level=='Mensile' else df_export_hist['Date'].dt.strftime(date_format_excel_hist)
                                 df_to_write_hist = df_export_hist[['Date', 'ResourceName', 'AvgDailyUnits_Rounded']]
@@ -604,7 +596,7 @@ if current_file_to_process is not None:
                                     aggregated_hist['AvgDailyUnits'] = aggregated_hist['WorkHours'] / 8.0
 
                                 aggregated_hist['Periodo'] = aggregated_hist['Date'].dt.strftime(date_format_display_hist).str.capitalize()
-                                aggregated_hist['AvgDailyUnits_Rounded'] = aggregated_hist['AvgDailyUnits'].apply(math.ceil) # Arrotonda
+                                aggregated_hist['AvgDailyUnits_Rounded'] = aggregated_hist['AvgDailyUnits'].round() # <<< Arrotondamento standard
 
                                 # --- VISUALIZZAZIONE MANODOPERA/ALTRO/TUTTE ---
                                 st.markdown(f"###### Tabella Totale Unità Medie Giorn. {selected_resource_type} ({aggregation_level})")
@@ -646,18 +638,14 @@ if current_file_to_process is not None:
                                 if selected_resource_type == 'Mezzi' and aggregation_level == 'Mensile' and df_pivot_export is not None:
                                     df_pivot_export.to_excel(writer, sheet_name='Tabella_Pivot')
                                     worksheet_pivot = writer.sheets['Tabella_Pivot']
-                                    # --- [CORREZIONE v19.8] Correzione ciclo colonne pivot ---
                                     for idx, col in enumerate(df_pivot_export.columns):
-                                        col_letter = openpyxl.utils.get_column_letter(idx + 2) # +2 per indice e colonna
-                                        try:
-                                            max_len = max((df_pivot_export[col].astype(str).map(len).max(), len(str(col)))) + 3
+                                        col_letter = openpyxl.utils.get_column_letter(idx + 2);
+                                        try: max_len = max((df_pivot_export[col].astype(str).map(len).max(), len(str(col)))) + 3
                                         except: max_len = len(str(col)) + 3
                                         worksheet_pivot.column_dimensions[col_letter].width = max_len
-                                    try:
-                                        idx_len = max(df_pivot_export.index.astype(str).map(len).max(), len(df_pivot_export.index.name) if df_pivot_export.index.name else 0) + 3
+                                    try: idx_len = max(df_pivot_export.index.astype(str).map(len).max(), len(df_pivot_export.index.name) if df_pivot_export.index.name else 0) + 3
                                     except: idx_len = 15
                                     worksheet_pivot.column_dimensions['A'].width = idx_len
-                                    # --- FINE CORREZIONE ---
                                 else:
                                     df_to_write_hist.to_excel(writer, index=False, sheet_name='Tabella')
                                     worksheet_table_hist = writer.sheets['Tabella']
