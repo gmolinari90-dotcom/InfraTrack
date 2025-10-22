@@ -1,4 +1,4 @@
-# --- v19.10 (Correzione Calcolo Unità Manodopera, Arrotondamento Standard) ---
+# --- v19.11 (Priorità Mezzi, Arrotondamento Standard, No Testo Unità) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -34,7 +34,7 @@ except locale.Error:
                 _locale_warning_shown = True
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v19.10", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v19.11", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 # ... (CSS invariato v17.12) ...
@@ -57,12 +57,14 @@ st.markdown("""
     div[data-testid="stDateInput"] input { font-size: 0.85rem !important; padding: 0.3rem 0.5rem !important;}
     .stCaptionContainer { font-size: 0.75rem !important; margin-top: -0.5rem; margin-bottom: 1rem;}
     .progress-text { font-size: 0.8rem; color: grey; margin-left: 10px; }
+    /* Stile per tabella debug risorse */
+    .debug-resource-table td { font-size: 0.75rem !important; padding: 2px 5px !important; }
 </style>
 """, unsafe_allow_html=True)
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v19.10") # Version updated
+st.markdown("## 🚆 InfraTrack v19.11") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -94,7 +96,6 @@ elif 'uploaded_file_state' not in st.session_state: uploaded_file = None
 
 # --- FUNZIONI HELPER ---
 # ... (get_minutes_per_day, format_duration_from_xml, get_tasks_to_distribute_for_sil, get_relevant_summary_name invariate) ...
-# ... (classify_resource, extract_timephased_work invariate da v19.8) ...
 @st.cache_data
 def get_minutes_per_day(_tree, _ns):
     minutes_per_day = 480
@@ -194,6 +195,7 @@ def get_relevant_summary_name(wbs_list, wbs_map):
             return f"Riepilogo: {common_wbs}"
     except Exception: return "Attività Multiple"
 
+# --- [MODIFICATO v19.9] Classificazione Risorse (Priorità Mezzi) ---
 LABOR_KEYWORDS = [
     'operaio', 'ope ', 'addetto', 'squadra', 'assistente', 'tecnico', 'capo',
     'resp', 'ingegnere', 'geometra', 'sorvegliante', 'pilota', 'gruista',
@@ -209,14 +211,24 @@ EQUIPMENT_KEYWORDS = [
 ]
 
 def classify_resource(resource_name):
+    """Classifica una risorsa in 'Manodopera', 'Mezzi' o 'Altro'."""
     if not resource_name: return 'Altro'
     name_lower = resource_name.lower().strip()
-    if any(keyword in name_lower for keyword in LABOR_KEYWORDS): return 'Manodopera'
-    if any(keyword in name_lower for keyword in EQUIPMENT_KEYWORDS): return 'Mezzi'
+    
+    # <<< PRIORITÀ MEZZI (per evitare che "Autista Autocarro" diventi Manodopera) >>>
+    # 1. Controlla Mezzi
+    if any(keyword in name_lower for keyword in EQUIPMENT_KEYWORDS):
+        return 'Mezzi'
+    # 2. Controlla Manodopera
+    if any(keyword in name_lower for keyword in LABOR_KEYWORDS):
+        return 'Manodopera'
+    # 3. Fallback
     return 'Altro'
+# --- FINE MODIFICA ---
 
 @st.cache_data
 def extract_timephased_work(_xml_tree, _namespaces, _resource_map):
+    # ... (Funzione invariata da v19.1) ...
     daily_work_data = []
     assignments = _xml_tree.findall('.//msp:Assignment', namespaces=_namespaces)
     for ass in assignments:
@@ -243,6 +255,7 @@ def extract_timephased_work(_xml_tree, _namespaces, _resource_map):
     if not daily_work_data: return pd.DataFrame(columns=['Date', 'ResourceUID', 'ResourceType', 'WorkMinutes'])
     daily_df = pd.DataFrame(daily_work_data); daily_df['Date'] = pd.to_datetime(daily_df['Date'])
     return daily_df
+
 
 # --- INIZIO ANALISI ---
 current_file_to_process = st.session_state.get('uploaded_file_state')
@@ -536,10 +549,12 @@ if current_file_to_process is not None:
                                 df_display_hist.rename(columns={'AvgDailyUnits_Rounded': col_name_hist}, inplace=True)
                                 
                                 try:
-                                    pivot_table = pd.pivot_table(df_display_hist, values=col_name_hist, index='Periodo', columns='ResourceName', aggfunc='first', fill_value=0)
-                                    st.dataframe(pivot_table, use_container_width=True) # Mostra interi
+                                    # Usa il nome colonna rinominato per il pivot
+                                    pivot_table = pd.pivot_table(df_display_hist, values=col_name_hist, index='Periodo', columns='ResourceName', aggfunc='first', fill_value=0) # Usa fill_value=0
+                                    st.dataframe(pivot_table, use_container_width=True) # Non serve astype(int) se fill_value=0
                                 except Exception:
                                     st.dataframe(df_display_hist[['Periodo', 'ResourceName', col_name_hist]], use_container_width=True, hide_index=True)
+
 
                                 st.markdown(f"###### Grafico Istogramma Unità Medie Giorn. Mezzi ({aggregation_level})")
                                 fig_hist = go.Figure()
@@ -587,11 +602,9 @@ if current_file_to_process is not None:
                                     aggregated_hist_raw = aggregated_daily_total.set_index('Date')['WorkHours'].resample('ME').sum().reset_index()
                                     aggregated_hist_raw['DaysInMonth'] = aggregated_hist_raw['Date'].dt.daysinmonth
                                     aggregated_hist = aggregated_hist_raw
-                                    # Calcola media giornaliera nel mese
                                     aggregated_hist['AvgDailyUnits'] = (aggregated_hist['WorkHours'] / 8.0) / aggregated_hist['DaysInMonth']
                                 else: # Giornaliera
                                     aggregated_hist = aggregated_daily_total
-                                    # Calcola unità per quel giorno
                                     aggregated_hist['AvgDailyUnits'] = aggregated_hist['WorkHours'] / 8.0
                                 # --- FINE CORREZIONE ---
 
@@ -638,17 +651,21 @@ if current_file_to_process is not None:
                                 if selected_resource_type == 'Mezzi' and aggregation_level == 'Mensile' and df_pivot_export is not None:
                                     df_pivot_export.to_excel(writer, sheet_name='Tabella_Pivot')
                                     worksheet_pivot = writer.sheets['Tabella_Pivot']
-                                    # --- [CORREZIONE v19.8] Correzione ciclo colonne pivot ---
+                                    # --- [CORREZIONE v19.9] Correzione ciclo colonne pivot ---
                                     for idx, col in enumerate(df_pivot_export.columns):
-                                        col_letter = openpyxl.utils.get_column_letter(idx + 2)
+                                        col_letter = openpyxl.utils.get_column_letter(idx + 2) # +2 per indice e colonna
                                         try:
-                                            max_len = max((df_pivot_export[col].astype(str).map(len).max(), len(str(col)))) + 3
+                                            col_str = str(col) # Converte nome colonna (es. int) a stringa
+                                            max_len = max((df_pivot_export[col].astype(str).map(len).max(), len(col_str))) + 3
                                         except: max_len = len(str(col)) + 3
                                         worksheet_pivot.column_dimensions[col_letter].width = max_len
                                     try:
-                                        idx_len = max(df_pivot_export.index.astype(str).map(len).max(), len(df_pivot_export.index.name) if df_pivot_export.index.name else 0) + 3
+                                        idx_name_len = len(str(df_pivot_export.index.name)) if df_pivot_export.index.name else 0
+                                        idx_val_len = df_pivot_export.index.astype(str).map(len).max()
+                                        idx_len = max(idx_name_len, idx_val_len) + 3
                                     except: idx_len = 15
                                     worksheet_pivot.column_dimensions['A'].width = idx_len
+                                    # --- FINE CORREZIONE ---
                                 else:
                                     df_to_write_hist.to_excel(writer, index=False, sheet_name='Tabella')
                                     worksheet_table_hist = writer.sheets['Tabella']
@@ -681,7 +698,7 @@ if current_file_to_process is not None:
         with st.expander("🔍 Debug: Classificazione Risorse"):
             df_res_class = st.session_state.get('resource_classification_debug')
             if df_res_class is not None and not df_res_class.empty:
-                st.write("Elenco di tutte le risorse trovate e come sono state classificate (Logica: Manodopera prima di Mezzi):")
+                st.write("Elenco di tutte le risorse trovate e come sono state classificate (Logica: Mezzi prima di Manodopera):")
                 st.dataframe(df_res_class, use_container_width=True, height=300, hide_index=True)
                 counts = df_res_class['Tipo Classificato'].value_counts().reset_index()
                 counts.columns = ['Tipo', 'Conteggio']
