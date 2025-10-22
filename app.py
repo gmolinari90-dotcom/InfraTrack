@@ -1,4 +1,4 @@
-# --- v19.13 (Formato Mesi Manuale, Debug Raggruppato) ---
+# --- v19.14 (Correzione Indentazione Debug Raggruppato) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -10,7 +10,7 @@ import math
 import plotly.graph_objects as go
 import traceback
 import os
-# import locale # Rimosso, non più necessario
+import locale
 try:
     import plotly.io as pio
     from openpyxl.drawing.image import Image
@@ -20,15 +20,21 @@ except ImportError:
 import openpyxl.utils
 import plotly.express as px
 
-# --- [NUOVO v19.13] Mappa Mesi Italiani ---
-italian_month_map = {
-    1: 'Gen', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'Mag', 6: 'Giu',
-    7: 'Lug', 8: 'Ago', 9: 'Set', 10: 'Ott', 11: 'Nov', 12: 'Dic'
-}
-# --- Rimosso blocco locale.setlocale ---
+# --- Imposta Locale Italiano ---
+# ... (Codice invariato v17.13) ...
+_locale_warning_shown = False
+try: locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
+except locale.Error:
+    try: locale.setlocale(locale.LC_TIME, 'italian')
+    except locale.Error:
+        try: locale.setlocale(locale.LC_TIME, '')
+        except locale.Error:
+             if not _locale_warning_shown:
+                print("WARNING: Impossibile impostare qualsiasi locale per i nomi dei mesi.")
+                _locale_warning_shown = True
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v19.13", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v19.14", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 # ... (CSS invariato v17.12) ...
@@ -59,7 +65,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v19.13") # Version updated
+st.markdown("## 🚆 InfraTrack v19.14") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -428,14 +434,12 @@ if current_file_to_process is not None:
                                 aggregated_data = pd.DataFrame(); display_columns = []; plot_custom_data = None; col_summary_name = "Riepilogo WBS"; date_format_display = ""; date_format_excel = ""; excel_filename = ""
                                 if aggregation_level == 'Mensile':
                                     aggregated_values = filtered_cost.set_index('Date')['Value'].resample('ME').sum().reset_index()
-                                    # --- [MODIFICATO v19.13] Ordinamento + Mappa Mesi ---
-                                    aggregated_values = aggregated_values.sort_values(by='Date')
+                                    aggregated_values = aggregated_values.sort_values(by='Date') # <<< Ordina
                                     aggregated_data = aggregated_values
                                     date_format_display = '%b-%y'; date_format_excel = '%b-%y'
                                     aggregated_data['Month_Num'] = aggregated_data['Date'].dt.month
                                     aggregated_data['Year_Num'] = aggregated_data['Date'].dt.strftime('%y')
                                     aggregated_data['Periodo'] = aggregated_data['Month_Num'].map(italian_month_map) + '-' + aggregated_data['Year_Num']
-                                    # ---
                                     axis_title = "Mese"; col_name = "Costo Mensile (€)"; display_columns = ['Periodo', col_name, 'Costo Cumulato (€)']; excel_filename = "Dati_SIL_Mensili.xlsx"
                                 else: # Giornaliera
                                     aggregated_daily = filtered_cost.copy(); aggregated_daily[col_summary_name] = aggregated_daily['WBS_List'].apply(lambda l: get_relevant_summary_name(l, wbs_name_map))
@@ -471,17 +475,16 @@ if current_file_to_process is not None:
                             else: st.warning(f"Nessun dato di costo trovato nel periodo selezionato.")
                 except Exception as analysis_error: st.error(f"Errore Analisi Avanzata: {analysis_error}"); st.error(traceback.format_exc())
 
-        # --- [MODIFICATO v19.13] Sezione Istogrammi Risorse ---
+        # --- [MODIFICATO v19.12] Sezione Istogrammi Risorse ---
         st.markdown("---")
         st.markdown("###### 📊 Istogrammi Risorse (Unità Medie Giornaliere eq. 8h)")
 
-        # --- Opzione "Tutte" rimossa ---
-        resource_type_options = ['Manodopera', 'Mezzi', 'Altro']
+        resource_type_options = ['Manodopera', 'Mezzi', 'Altro'] # "Tutte" rimosso
         selected_resource_type = st.selectbox(
             "Seleziona il tipo di risorsa da analizzare:",
             resource_type_options,
             key="resource_type_selector",
-            help="Mostra le unità medie giornaliere equivalenti (Manodopera = totale, Mezzi/Altro = dettaglio)." # Help aggiornato
+            help="Mostra le unità medie giornaliere equivalenti (Manodopera = totale, Mezzi/Altro = dettaglio)."
         )
 
         if st.button("📊 Avvia Analisi Istogrammi", key="analyze_histograms"):
@@ -497,7 +500,6 @@ if current_file_to_process is not None:
                 try:
                     with st.spinner(f"Calcolo unità medie giornaliere ({selected_resource_type})..."):
                         work_df_filtered = timephased_work_df.copy()
-                        # Filtro standard (non serve più 'Tutte')
                         work_df_filtered = work_df_filtered[work_df_filtered['ResourceType'] == selected_resource_type]
 
                         selected_start_dt = datetime.combine(selected_start_date, datetime.min.time())
@@ -518,9 +520,9 @@ if current_file_to_process is not None:
                             excel_filename_hist = f"Istogramma_UnitaMediaGiorn_{selected_resource_type.replace(' ', '_')}_{aggregation_level}.xlsx"
                             df_pivot_export = None
 
-                            # --- [MODIFICATO v19.13] Logica differenziata (Mezzi e Altro VS Manodopera) ---
+                            # --- [MODIFICATO v19.12] Logica differenziata ('Mezzi' e 'Altro' vs 'Manodopera') ---
                             if selected_resource_type in ['Mezzi', 'Altro']:
-                                # Dettaglio per Risorsa (Mezzi o Altro)
+                                # Dettaglio per Risorsa
                                 aggregated_daily_detail = filtered_work.groupby(['Date', 'ResourceName'])['WorkHours'].sum().reset_index()
 
                                 if aggregation_level == 'Mensile':
@@ -533,10 +535,10 @@ if current_file_to_process is not None:
                                     aggregated_hist['AvgDailyUnits'] = aggregated_hist['WorkHours'] / 8.0
 
                                 aggregated_hist = aggregated_hist.sort_values(by=['Date', 'ResourceName'])
-                                aggregated_hist['Month_Num'] = aggregated_hist['Date'].dt.month # Per mappa
-                                aggregated_hist['Year_Num'] = aggregated_hist['Date'].dt.strftime('%y') # Per mappa
+                                aggregated_hist['Month_Num'] = aggregated_hist['Date'].dt.month
+                                aggregated_hist['Year_Num'] = aggregated_hist['Date'].dt.strftime('%y')
                                 aggregated_hist['Periodo'] = aggregated_hist['Month_Num'].map(italian_month_map) + '-' + aggregated_hist['Year_Num'] if aggregation_level == 'Mensile' else aggregated_hist['Date'].dt.strftime(date_format_display_hist)
-                                aggregated_hist['AvgDailyUnits_Rounded'] = aggregated_hist['AvgDailyUnits'].round().astype(int)
+                                aggregated_hist['AvgDailyUnits_Rounded'] = aggregated_hist['AvgDailyUnits'].round().astype(int) # Arrotondamento standard
 
                                 # --- VISUALIZZAZIONE MEZZI / ALTRO ---
                                 st.markdown(f"###### Tabella Dettaglio Unità Medie Giorn. {selected_resource_type} ({aggregation_level})")
@@ -545,7 +547,7 @@ if current_file_to_process is not None:
                                 
                                 try:
                                     pivot_table = pd.pivot_table(df_display_hist, values=col_name_hist, index=['Date', 'Periodo'], columns='ResourceName', aggfunc='first', fill_value=0)
-                                    pivot_table = pivot_table.reset_index(level=0, drop=True) # Rimuovi Date
+                                    pivot_table = pivot_table.reset_index(level=0, drop=True) # Rimuovi 'Date' per display
                                     st.dataframe(pivot_table, use_container_width=True)
                                 except Exception as e_pivot:
                                     st.warning(f"Impossibile creare tabella pivot ({e_pivot}). Mostro tabella standard.")
@@ -590,7 +592,7 @@ if current_file_to_process is not None:
                                         df_pivot_export = df_pivot_export.reindex(df_export_hist['Periodo'].unique()) # Forza ordinamento
                                      except Exception: df_pivot_export = None
 
-                            else: # Manodopera (Totale)
+                            else: # Solo Manodopera
                                 aggregated_daily_total = filtered_work.groupby('Date')['WorkHours'].sum().reset_index()
 
                                 if aggregation_level == 'Mensile':
@@ -603,8 +605,8 @@ if current_file_to_process is not None:
                                     aggregated_hist = aggregated_daily_total
                                     aggregated_hist['AvgDailyUnits'] = aggregated_hist['WorkHours'] / 8.0
 
-                                aggregated_hist['Month_Num'] = aggregated_hist['Date'].dt.month # Per mappa
-                                aggregated_hist['Year_Num'] = aggregated_hist['Date'].dt.strftime('%y') # Per mappa
+                                aggregated_hist['Month_Num'] = aggregated_hist['Date'].dt.month
+                                aggregated_hist['Year_Num'] = aggregated_hist['Date'].dt.strftime('%y')
                                 aggregated_hist['Periodo'] = aggregated_hist['Month_Num'].map(italian_month_map) + '-' + aggregated_hist['Year_Num'] if aggregation_level == 'Mensile' else aggregated_hist['Date'].dt.strftime(date_format_display_hist)
                                 aggregated_hist['AvgDailyUnits_Rounded'] = aggregated_hist['AvgDailyUnits'].round().astype(int)
 
@@ -683,7 +685,7 @@ if current_file_to_process is not None:
 
 
                 except Exception as analysis_error_hist:
-                    st.error(f"Errore durante l'analisi degli istogrammi: {analysis_error_hist}")
+                    st.error(f"Errore during l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
 
         # --- [MODIFICATO v19.13] Debug Raggruppato ---
