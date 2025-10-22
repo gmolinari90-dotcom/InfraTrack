@@ -1,4 +1,4 @@
-# --- v20.0 (Percorso Critico, Debug Raggruppato, Mesi ITA) ---
+# --- v20.0 (Aggiunta Analisi Percorso Critico, Correzione Indentazione Debug) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -10,7 +10,7 @@ import math
 import plotly.graph_objects as go
 import traceback
 import os
-# import locale # Rimosso
+import locale
 try:
     import plotly.io as pio
     from openpyxl.drawing.image import Image
@@ -20,12 +20,18 @@ except ImportError:
 import openpyxl.utils
 import plotly.express as px
 
-# --- [NUOVO v20.0] Mappa Mesi Italiani ---
-italian_month_map = {
-    1: 'Gen', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'Mag', 6: 'Giu',
-    7: 'Lug', 8: 'Ago', 9: 'Set', 10: 'Ott', 11: 'Nov', 12: 'Dic'
-}
-# --- Rimosso blocco locale.setlocale ---
+# --- Imposta Locale Italiano ---
+# ... (Codice invariato v17.13) ...
+_locale_warning_shown = False
+try: locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
+except locale.Error:
+    try: locale.setlocale(locale.LC_TIME, 'italian')
+    except locale.Error:
+        try: locale.setlocale(locale.LC_TIME, '')
+        except locale.Error:
+             if not _locale_warning_shown:
+                print("WARNING: Impossibile impostare qualsiasi locale per i nomi dei mesi.")
+                _locale_warning_shown = True
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
 st.set_page_config(page_title="InfraTrack v20.0", page_icon="🚆", layout="wide") # Version updated
@@ -391,8 +397,9 @@ if current_file_to_process is not None:
         # --- Analisi Dettagliate ---
         st.markdown("---"); st.markdown("##### 📊 Analisi Dettagliate")
 
-        # --- Analisi Curva S ---
+        # --- Analisi Curva S (Codice invariato da v18.3) ---
         if st.button("📈 Avvia Analisi Curva S", key="analyze_scurve"):
+            # ... (Codice Analisi SIL invariato) ...
             all_tasks_dataframe = st.session_state.get('all_tasks_data'); wbs_name_map = st.session_state.get('wbs_name_map', {})
             if all_tasks_dataframe is None or all_tasks_dataframe.empty: st.error("Errore: Dati attività non trovati.")
             elif not wbs_name_map: st.error("Errore: Mappa WBS->Nome non trovata.")
@@ -429,8 +436,9 @@ if current_file_to_process is not None:
                                 # --- [MODIFICATO v19.15] Formato Mese ITA ---
                                 if aggregation_level == 'Mensile':
                                     aggregated_values = filtered_cost.set_index('Date')['Value'].resample('ME').sum().reset_index()
-                                    aggregated_values = aggregated_values.sort_values(by='Date')
+                                    aggregated_values = aggregated_values.sort_values(by='Date') # <<< Ordina
                                     aggregated_data = aggregated_values
+                                    date_format_display = '%b-%y'; date_format_excel = '%b-%y'
                                     aggregated_data['Month_Num'] = aggregated_data['Date'].dt.month
                                     aggregated_data['Year_Num'] = aggregated_data['Date'].dt.strftime('%y')
                                     aggregated_data['Periodo'] = aggregated_data['Month_Num'].map(italian_month_map) + '-' + aggregated_data['Year_Num']
@@ -542,9 +550,11 @@ if current_file_to_process is not None:
                                     aggregated_hist['AvgDailyUnits'] = aggregated_hist['WorkHours'] / 8.0
 
                                 aggregated_hist = aggregated_hist.sort_values(by=['Date', 'ResourceName'])
+                                # --- [MODIFICATO v19.15] Formato Mese ITA ---
                                 aggregated_hist['Month_Num'] = aggregated_hist['Date'].dt.month
                                 aggregated_hist['Year_Num'] = aggregated_hist['Date'].dt.strftime('%y')
                                 aggregated_hist['Periodo'] = aggregated_hist['Month_Num'].map(italian_month_map) + '-' + aggregated_hist['Year_Num'] if aggregation_level == 'Mensile' else aggregated_hist['Date'].dt.strftime(date_format_display_hist)
+                                # ---
                                 aggregated_hist['AvgDailyUnits_Rounded'] = aggregated_hist['AvgDailyUnits'].round().astype(int)
 
                                 # --- VISUALIZZAZIONE MEZZI / ALTRO ---
@@ -554,7 +564,7 @@ if current_file_to_process is not None:
                                 
                                 try:
                                     pivot_table = pd.pivot_table(df_display_hist, values=col_name_hist, index=['Date', 'Periodo'], columns='ResourceName', aggfunc='first', fill_value=0)
-                                    pivot_table = pivot_table.reset_index(level=0, drop=True)
+                                    pivot_table = pivot_table.reset_index(level=0, drop=True) # Rimuovi 'Date' per display
                                     st.dataframe(pivot_table, use_container_width=True)
                                 except Exception as e_pivot:
                                     st.warning(f"Impossibile creare tabella pivot ({e_pivot}). Mostro tabella standard.")
@@ -589,6 +599,7 @@ if current_file_to_process is not None:
                                 output_hist = BytesIO()
                                 df_export_hist = aggregated_hist.copy()
                                 rename_map_excel_hist = {'Periodo': axis_title_hist, 'AvgDailyUnits_Rounded': col_name_hist, 'ResourceName': 'Risorsa'}
+                                #df_export_hist['Date'] = df_export_hist['Date'].dt.strftime(date_format_excel_hist).str.capitalize() if aggregation_level=='Mensile' else df_export_hist['Date'].dt.strftime(date_format_excel_hist)
                                 df_to_write_hist = df_export_hist[['Periodo', 'ResourceName', 'AvgDailyUnits_Rounded']]
                                 df_to_write_hist = df_to_write_hist.rename(columns=rename_map_excel_hist)
 
@@ -611,9 +622,11 @@ if current_file_to_process is not None:
                                     aggregated_hist = aggregated_daily_total
                                     aggregated_hist['AvgDailyUnits'] = aggregated_hist['WorkHours'] / 8.0
 
+                                # --- [MODIFICATO v19.15] Formato Mese ITA ---
                                 aggregated_hist['Month_Num'] = aggregated_hist['Date'].dt.month
                                 aggregated_hist['Year_Num'] = aggregated_hist['Date'].dt.strftime('%y')
                                 aggregated_hist['Periodo'] = aggregated_hist['Month_Num'].map(italian_month_map) + '-' + aggregated_hist['Year_Num'] if aggregation_level == 'Mensile' else aggregated_hist['Date'].dt.strftime(date_format_display_hist)
+                                # ---
                                 aggregated_hist['AvgDailyUnits_Rounded'] = aggregated_hist['AvgDailyUnits'].round().astype(int)
 
                                 # --- VISUALIZZAZIONE MANODOPERA ---
@@ -646,6 +659,7 @@ if current_file_to_process is not None:
                                 output_hist = BytesIO()
                                 df_export_hist = aggregated_hist.copy()
                                 rename_map_excel_hist = {'Periodo': axis_title_hist, 'AvgDailyUnits_Rounded': col_name_hist}
+                                #df_export_hist['Date'] = df_export_hist['Date'].dt.strftime(date_format_excel_hist).str.capitalize() if aggregation_level=='Mensile' else df_export_hist['Date'].dt.strftime(date_format_excel_hist)
                                 df_to_write_hist = df_export_hist[['Periodo', 'AvgDailyUnits_Rounded']] # Usa Periodo già formattato
                                 df_to_write_hist = df_to_write_hist.rename(columns=rename_map_excel_hist)
 
@@ -691,10 +705,10 @@ if current_file_to_process is not None:
 
 
                 except Exception as analysis_error_hist:
-                    st.error(f"Errore during l'analisi degli istogrammi: {analysis_error_hist}")
+                    st.error(f"Errore durante l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
 
-        # --- [MODIFICATO v19.14] Debug Raggruppato e Indentato ---
+        # --- [MODIFICATO v19.15] Debug Raggruppato e Indentato ---
         st.markdown("---")
         with st.expander("🔍 Area Debug (Avanzato)", collapsed=True):
             st.markdown("##### Debug: Classificazione Risorse")
