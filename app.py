@@ -1,4 +1,4 @@
-# --- v19.16 (Correzione Indentazione Debug Raggruppato) ---
+# --- v20.0 (Percorso Critico, Debug Raggruppato, Mesi ITA) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -20,7 +20,7 @@ except ImportError:
 import openpyxl.utils
 import plotly.express as px
 
-# --- [NUOVO v19.13] Mappa Mesi Italiani ---
+# --- [NUOVO v20.0] Mappa Mesi Italiani ---
 italian_month_map = {
     1: 'Gen', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'Mag', 6: 'Giu',
     7: 'Lug', 8: 'Ago', 9: 'Set', 10: 'Ott', 11: 'Nov', 12: 'Dic'
@@ -28,7 +28,7 @@ italian_month_map = {
 # --- Rimosso blocco locale.setlocale ---
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v19.16", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v20.0", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 # ... (CSS invariato v17.12) ...
@@ -59,7 +59,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v19.16") # Version updated
+st.markdown("## 🚆 InfraTrack v20.0") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -354,6 +354,7 @@ if current_file_to_process is not None:
     if st.session_state.get('file_processed_success', False):
 
         # --- Sezione 2 (Invariata) ---
+        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 2. Analisi Preliminare"); st.markdown("##### 📄 Informazioni Generali dell'Appalto")
         project_name = st.session_state.get('project_name', "N/D"); formatted_cost = st.session_state.get('formatted_cost', "N/D")
         col1_disp, col2_disp = st.columns(2);
@@ -368,7 +369,9 @@ if current_file_to_process is not None:
             excel_data = output.getvalue(); st.download_button(label="Scarica TUP/TUF (Excel)", data=excel_data, file_name="termini_utili_TUP_TUF.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_tup")
         else: st.warning("Nessun Termine Utile (TUP o TUF) trovato nel file.")
 
+
         # --- Sezione 3: Selezione Periodo e Analisi ---
+        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
         if not default_start: default_start = date.today()
@@ -384,10 +387,11 @@ if current_file_to_process is not None:
         st.markdown("##### 📦 Seleziona Aggregazione Dati")
         aggregation_level = st.radio("Scegli il livello di dettaglio per l'analisi:", ('Mensile', 'Giornaliera'), key="aggregation_selector", horizontal=True, help="Scegli 'Giornaliera' per visualizzare i dettagli giornalieri.")
 
+
         # --- Analisi Dettagliate ---
         st.markdown("---"); st.markdown("##### 📊 Analisi Dettagliate")
 
-        # --- Analisi Curva S (Codice invariato da v18.3) ---
+        # --- Analisi Curva S ---
         if st.button("📈 Avvia Analisi Curva S", key="analyze_scurve"):
             all_tasks_dataframe = st.session_state.get('all_tasks_data'); wbs_name_map = st.session_state.get('wbs_name_map', {})
             if all_tasks_dataframe is None or all_tasks_dataframe.empty: st.error("Errore: Dati attività non trovati.")
@@ -425,9 +429,8 @@ if current_file_to_process is not None:
                                 # --- [MODIFICATO v19.15] Formato Mese ITA ---
                                 if aggregation_level == 'Mensile':
                                     aggregated_values = filtered_cost.set_index('Date')['Value'].resample('ME').sum().reset_index()
-                                    aggregated_values = aggregated_values.sort_values(by='Date') # <<< Ordina
+                                    aggregated_values = aggregated_values.sort_values(by='Date')
                                     aggregated_data = aggregated_values
-                                    date_format_display = '%b-%y'; date_format_excel = '%b-%y'
                                     aggregated_data['Month_Num'] = aggregated_data['Date'].dt.month
                                     aggregated_data['Year_Num'] = aggregated_data['Date'].dt.strftime('%y')
                                     aggregated_data['Periodo'] = aggregated_data['Month_Num'].map(italian_month_map) + '-' + aggregated_data['Year_Num']
@@ -551,7 +554,7 @@ if current_file_to_process is not None:
                                 
                                 try:
                                     pivot_table = pd.pivot_table(df_display_hist, values=col_name_hist, index=['Date', 'Periodo'], columns='ResourceName', aggfunc='first', fill_value=0)
-                                    pivot_table = pivot_table.reset_index(level=0, drop=True) # Rimuovi 'Date' per display
+                                    pivot_table = pivot_table.reset_index(level=0, drop=True)
                                     st.dataframe(pivot_table, use_container_width=True)
                                 except Exception as e_pivot:
                                     st.warning(f"Impossibile creare tabella pivot ({e_pivot}). Mostro tabella standard.")
