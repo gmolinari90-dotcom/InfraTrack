@@ -1,4 +1,4 @@
-# --- v19.7 (Arrotondamento Unità, Debug Classificazione Risorse) ---
+# --- v19.8 (Correzione SyntaxError Excel Pivot) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -6,7 +6,7 @@ from datetime import datetime, date, timedelta
 import re
 import isodate
 from io import BytesIO
-import math # <<<<<<<<<<< Importato math per ceil
+import math
 import plotly.graph_objects as go
 import traceback
 import os
@@ -34,7 +34,7 @@ except locale.Error:
                 _locale_warning_shown = True
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v19.7", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v19.8", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 # ... (CSS invariato v17.12) ...
@@ -57,14 +57,12 @@ st.markdown("""
     div[data-testid="stDateInput"] input { font-size: 0.85rem !important; padding: 0.3rem 0.5rem !important;}
     .stCaptionContainer { font-size: 0.75rem !important; margin-top: -0.5rem; margin-bottom: 1rem;}
     .progress-text { font-size: 0.8rem; color: grey; margin-left: 10px; }
-    /* Stile per tabella debug risorse */
-    .debug-resource-table td { font-size: 0.75rem !important; padding: 2px 5px !important; }
 </style>
 """, unsafe_allow_html=True)
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v19.7") # Version updated
+st.markdown("## 🚆 InfraTrack v19.8") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -337,15 +335,11 @@ if current_file_to_process is not None:
                 st.session_state['resource_map'] = resource_map
                 timephased_work_data = extract_timephased_work(tree, ns, resource_map)
                 st.session_state['timephased_work_data'] = timephased_work_data
-
-                # --- [NUOVO v19.7] DEBUG Classificazione Risorse ---
                 resource_class_list = []
                 for uid, name in resource_map.items():
                     res_type = classify_resource(name)
                     resource_class_list.append({'UID': uid, 'Nome': name, 'Tipo Classificato': res_type})
                 st.session_state['resource_classification_debug'] = pd.DataFrame(resource_class_list)
-                # --- FINE DEBUG ---
-
                 current_file_to_process.seek(0); debug_content_bytes = current_file_to_process.read(2000);
                 try: st.session_state['debug_raw_text'] = '\n'.join(debug_content_bytes.decode('utf-8', errors='ignore').splitlines()[:50])
                 except Exception as decode_err: st.session_state['debug_raw_text'] = f"Errore decodifica debug: {decode_err}"
@@ -380,6 +374,7 @@ if current_file_to_process is not None:
 
 
         # --- Sezione 3: Selezione Periodo e Analisi ---
+        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
         if not default_start: default_start = date.today()
@@ -392,7 +387,6 @@ if current_file_to_process is not None:
             min_end_date = selected_start_date; actual_default_finish = max(default_finish, min_end_date)
             reasonable_max_date = actual_default_finish + timedelta(days=10*365)
             selected_finish_date = st.date_input("Data Fine", value=actual_default_finish, min_value=min_end_date, max_value=reasonable_max_date, format="DD/MM/YYYY", key="finish_date_selector")
-
         st.markdown("##### 📦 Seleziona Aggregazione Dati")
         aggregation_level = st.radio("Scegli il livello di dettaglio per l'analisi:", ('Mensile', 'Giornaliera'), key="aggregation_selector", horizontal=True, help="Scegli 'Giornaliera' per visualizzare i dettagli giornalieri.")
 
@@ -443,6 +437,11 @@ if current_file_to_process is not None:
                                     aggregated_daily = filtered_cost.copy(); aggregated_daily[col_summary_name] = aggregated_daily['WBS_List'].apply(lambda l: get_relevant_summary_name(l, wbs_name_map))
                                     aggregated_data = aggregated_daily; date_format_display = '%d/%m/%Y'; date_format_excel = '%d/%m/%Y'; aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime(date_format_display)
                                     axis_title = "Giorno"; col_name = "Costo Giornaliero (€)"; display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', col_summary_name]; plot_custom_data = aggregated_data[col_summary_name]; excel_filename = "Dati_SIL_Giornalieri.xlsx"
+                                
+                                # --- [CORREZIONE v18.3] Rimozione else superfluo ---
+                                # (Nessun 'else' era qui, l'errore era altrove)
+                                # --- FINE CORREZIONE ---
+
                                 aggregated_data['Costo Cumulato (€)'] = aggregated_data['Value'].cumsum()
                                 st.markdown(f"###### Tabella Dati SIL Aggregati ({aggregation_level})"); df_display_sil = aggregated_data.copy(); df_display_sil.rename(columns={'Value': col_name}, inplace=True)
                                 df_display_sil[col_name] = df_display_sil[col_name].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")); df_display_sil['Costo Cumulato (€)'] = df_display_sil['Costo Cumulato (€)'].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
@@ -473,9 +472,9 @@ if current_file_to_process is not None:
                             else: st.warning(f"Nessun dato di costo trovato nel periodo selezionato.")
                 except Exception as analysis_error: st.error(f"Errore Analisi Avanzata: {analysis_error}"); st.error(traceback.format_exc())
 
-        # --- [MODIFICATO v19.7] Sezione Istogrammi Risorse (Unità Medie Giornaliere + Arrotondamento) ---
+        # --- [MODIFICATO v19.6] Sezione Istogrammi Risorse (Unità Medie Giornaliere + Arrotondamento) ---
         st.markdown("---")
-        st.markdown("###### 📊 Istogrammi Risorse (Unità Medie Giornaliere eq. 8h)")
+        st.markdown("###### 📊 Istogrammi Risorse (Unità Medie Giornaliere eq. 8h)") # Titolo aggiornato
 
         resource_type_options = ['Tutte', 'Manodopera', 'Mezzi', 'Altro']
         selected_resource_type = st.selectbox(
@@ -517,6 +516,7 @@ if current_file_to_process is not None:
                             axis_title_hist = "Mese" if aggregation_level == 'Mensile' else "Giorno"
                             col_name_hist = f"Unità Medie Giorn. ({aggregation_level})"
                             excel_filename_hist = f"Istogramma_UnitaMediaGiorn_{selected_resource_type.replace(' ', '_')}_{aggregation_level}.xlsx"
+                            df_pivot_export = None # Inizializza
 
                             # --- Logica differenziata ---
                             if selected_resource_type == 'Mezzi':
@@ -537,16 +537,16 @@ if current_file_to_process is not None:
                                 # --- VISUALIZZAZIONE MEZZI (Unità Medie Giorn.) ---
                                 st.markdown(f"###### Tabella Dettaglio Unità Medie Giorn. Mezzi ({aggregation_level})")
                                 df_display_hist = aggregated_hist.copy()
-                                # Arrotonda per eccesso PRIMA di formattare
                                 df_display_hist['AvgDailyUnits_Rounded'] = df_display_hist['AvgDailyUnits'].apply(math.ceil)
                                 df_display_hist.rename(columns={'AvgDailyUnits_Rounded': col_name_hist}, inplace=True)
-                                df_display_hist[col_name_hist] = df_display_hist[col_name_hist].apply(lambda x: f"{x} unità/g") # Mostra intero
+                                df_display_hist[col_name_hist] = df_display_hist[col_name_hist].apply(lambda x: f"{x} unità/g")
 
-                                try: # Tabella Pivot
-                                    pivot_table = pd.pivot_table(df_display_hist, values=col_name_hist, index='Periodo', columns='ResourceName', aggfunc='first', fill_value="0 unità/g") # Usa aggfunc='first'
+                                try:
+                                    pivot_table = pd.pivot_table(df_display_hist, values=col_name_hist, index='Periodo', columns='ResourceName', aggfunc='first', fill_value="0 unità/g")
                                     st.dataframe(pivot_table, use_container_width=True)
-                                except Exception: # Fallback tabella lunga
+                                except Exception:
                                     st.dataframe(df_display_hist[['Periodo', 'ResourceName', col_name_hist]], use_container_width=True, hide_index=True)
+
 
                                 st.markdown(f"###### Grafico Istogramma Unità Medie Giorn. Mezzi ({aggregation_level})")
                                 fig_hist = go.Figure()
@@ -554,15 +554,14 @@ if current_file_to_process is not None:
                                 resource_names = aggregated_hist['ResourceName'].unique()
                                 for i, name in enumerate(resource_names):
                                     group = aggregated_hist[aggregated_hist['ResourceName'] == name]
-                                    # Arrotonda per eccesso per il grafico
                                     group_plot = group.copy()
                                     group_plot['AvgDailyUnits_Rounded'] = group_plot['AvgDailyUnits'].apply(math.ceil)
                                     fig_hist.add_trace(go.Bar(
                                         x=group_plot['Periodo'],
-                                        y=group_plot['AvgDailyUnits_Rounded'], # Usa arrotondato
+                                        y=group_plot['AvgDailyUnits_Rounded'],
                                         name=name,
                                         marker_color=colors[i % len(colors)],
-                                        hovertemplate=f'<b>{axis_title_hist}</b>: %{{x}}<br><b>Mezzo</b>: {name}<br><b>Unità Media Giorn.</b>: %{{y}}<extra></extra>' # Mostra intero
+                                        hovertemplate=f'<b>{axis_title_hist}</b>: %{{x}}<br><b>Mezzo</b>: {name}<br><b>Unità Media Giorn.</b>: %{{y}}<extra></extra>'
                                     ))
                                 fig_hist.update_layout(
                                     title=f'Istogramma Unità Medie Giorn. Mezzi - {aggregation_level.replace("a","e")} per Mezzo',
@@ -572,28 +571,25 @@ if current_file_to_process is not None:
                                     legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
                                     hovermode="x unified",
                                     template="plotly",
-                                    yaxis_tickformat = ',.0f' # Forza tick interi sull'asse Y
+                                    yaxis_tickformat = ',.0f'
                                 )
                                 st.plotly_chart(fig_hist, use_container_width=True)
 
                                 # --- EXPORT EXCEL MEZZI (Unità Medie Giorn. Arrotondate) ---
                                 output_hist = BytesIO()
                                 df_export_hist = aggregated_hist.copy()
-                                # Arrotonda per eccesso per l'export
                                 df_export_hist['AvgDailyUnits_Rounded'] = df_export_hist['AvgDailyUnits'].apply(math.ceil)
                                 rename_map_excel_hist = {'Date': axis_title_hist, 'AvgDailyUnits_Rounded': col_name_hist, 'ResourceName': 'Mezzo'}
                                 df_export_hist['Date'] = df_export_hist['Date'].dt.strftime(date_format_excel_hist).str.capitalize() if aggregation_level=='Mensile' else df_export_hist['Date'].dt.strftime(date_format_excel_hist)
-                                df_to_write_hist = df_export_hist[['Date', 'ResourceName', 'AvgDailyUnits_Rounded']] # Usa arrotondato
+                                df_to_write_hist = df_export_hist[['Date', 'ResourceName', 'AvgDailyUnits_Rounded']]
                                 df_to_write_hist = df_to_write_hist.rename(columns=rename_map_excel_hist)
 
-                                df_pivot_export = None
                                 if aggregation_level == 'Mensile':
                                      try:
-                                        # Crea pivot con valori GIA' arrotondati
                                         df_pivot_export = pd.pivot_table(df_to_write_hist, values=col_name_hist, index=axis_title_hist, columns='Mezzo', fill_value=0)
                                      except Exception: df_pivot_export = None
 
-                            else: # Manodopera, Altro, Tutte (Unità Medie Giorn. totali arrotondate)
+                            else: # Manodopera, Altro, Tutte
                                 aggregated_daily_total = filtered_work.groupby('Date')['WorkHours'].sum().reset_index()
 
                                 if aggregation_level == 'Mensile':
@@ -610,23 +606,21 @@ if current_file_to_process is not None:
                                 # --- VISUALIZZAZIONE MANODOPERA/ALTRO/TUTTE (Unità Medie Giorn. Arrotondate) ---
                                 st.markdown(f"###### Tabella Totale Unità Medie Giorn. {selected_resource_type} ({aggregation_level})")
                                 df_display_hist = aggregated_hist.copy()
-                                # Arrotonda per eccesso PRIMA di formattare
                                 df_display_hist['AvgDailyUnits_Rounded'] = df_display_hist['AvgDailyUnits'].apply(math.ceil)
                                 df_display_hist.rename(columns={'AvgDailyUnits_Rounded': col_name_hist}, inplace=True)
                                 df_display_hist[col_name_hist] = df_display_hist[col_name_hist].apply(lambda x: f"{x} unità/g")
                                 st.dataframe(df_display_hist[['Periodo', col_name_hist]], use_container_width=True, hide_index=True)
 
                                 st.markdown(f"###### Grafico Istogramma Totale Unità Medie Giorn. {selected_resource_type} ({aggregation_level})")
-                                # Arrotonda per eccesso per il grafico
                                 aggregated_hist_plot = aggregated_hist.copy()
                                 aggregated_hist_plot['AvgDailyUnits_Rounded'] = aggregated_hist_plot['AvgDailyUnits'].apply(math.ceil)
                                 fig_hist = go.Figure()
                                 fig_hist.add_trace(go.Bar(
                                     x=aggregated_hist_plot['Periodo'],
-                                    y=aggregated_hist_plot['AvgDailyUnits_Rounded'], # Usa arrotondato
+                                    y=aggregated_hist_plot['AvgDailyUnits_Rounded'],
                                     name=f'Unità Media Giorn. {aggregation_level}',
                                     marker_color='mediumseagreen',
-                                    hovertemplate=f'<b>{axis_title_hist}</b>: %{{x}}<br><b>Unità Media Giorn.</b>: %{{y}}<extra></extra>' # Mostra intero
+                                    hovertemplate=f'<b>{axis_title_hist}</b>: %{{x}}<br><b>Unità Media Giorn.</b>: %{{y}}<extra></extra>'
                                 ))
                                 fig_hist.update_layout(
                                     title=f'Istogramma Totale Unità Medie Giorn. ({selected_resource_type}) - {aggregation_level.replace("a","e")}',
@@ -634,64 +628,77 @@ if current_file_to_process is not None:
                                     yaxis=dict(title=f"Unità Medie Giorn. {aggregation_level.replace('a','e')} (eq. 8h)"),
                                     hovermode="x unified",
                                     template="plotly",
-                                    yaxis_tickformat = ',.0f' # Forza tick interi
+                                    yaxis_tickformat = ',.0f'
                                 )
                                 st.plotly_chart(fig_hist, use_container_width=True)
 
                                 # --- EXPORT EXCEL MANODOPERA/ALTRO/TUTTE (Unità Medie Giorn. Arrotondate) ---
                                 output_hist = BytesIO()
                                 df_export_hist = aggregated_hist.copy()
-                                # Arrotonda per eccesso per export
                                 df_export_hist['AvgDailyUnits_Rounded'] = df_export_hist['AvgDailyUnits'].apply(math.ceil)
                                 rename_map_excel_hist = {'Date': axis_title_hist, 'AvgDailyUnits_Rounded': col_name_hist}
                                 df_export_hist['Date'] = df_export_hist['Date'].dt.strftime(date_format_excel_hist).str.capitalize() if aggregation_level=='Mensile' else df_export_hist['Date'].dt.strftime(date_format_excel_hist)
-                                df_to_write_hist = df_export_hist[['Date', 'AvgDailyUnits_Rounded']] # Usa arrotondato
+                                df_to_write_hist = df_export_hist[['Date', 'AvgDailyUnits_Rounded']]
                                 df_to_write_hist = df_to_write_hist.rename(columns=rename_map_excel_hist)
 
                             # --- Export Excel (Comune) ---
                             with pd.ExcelWriter(output_hist, engine='openpyxl') as writer:
                                 if selected_resource_type == 'Mezzi' and aggregation_level == 'Mensile' and df_pivot_export is not None:
-                                    df_pivot_export.to_excel(writer, sheet_name='Tabella_Pivot') # Scrive il pivot
+                                    df_pivot_export.to_excel(writer, sheet_name='Tabella_Pivot')
                                     worksheet_pivot = writer.sheets['Tabella_Pivot']
+                                    # --- [CORREZIONE v18.3] Aggiusta colonne pivot ---
                                     for idx, col in enumerate(df_pivot_export.columns):
-                                        col_letter = openpyxl.utils.get_column_letter(idx + 2); try: max_len = max((df_pivot_export[col].astype(str).map(len).max(), len(str(col)))) + 3; except: max_len = len(str(col)) + 3; worksheet_pivot.column_dimensions[col_letter].width = max_len
-                                    try: idx_len = max(df_pivot_export.index.astype(str).map(len).max(), len(df_pivot_export.index.name) if df_pivot_export.index.name else 0) + 3; except: idx_len = 15; worksheet_pivot.column_dimensions['A'].width = idx_len
+                                        col_letter = openpyxl.utils.get_column_letter(idx + 2)
+                                        try:
+                                            max_len = max((df_pivot_export[col].astype(str).map(len).max(), len(str(col)))) + 3
+                                        except: # Fallback
+                                            max_len = len(str(col)) + 3
+                                        worksheet_pivot.column_dimensions[col_letter].width = max_len
+                                    try:
+                                        idx_len = max(df_pivot_export.index.astype(str).map(len).max(), len(df_pivot_export.index.name) if df_pivot_export.index.name else 0) + 3
+                                    except:
+                                        idx_len = 15
+                                    worksheet_pivot.column_dimensions['A'].width = idx_len
+                                    # --- FINE CORREZIONE ---
                                 else:
-                                    df_to_write_hist.to_excel(writer, index=False, sheet_name='Tabella') # Scrive tabella lunga
+                                    df_to_write_hist.to_excel(writer, index=False, sheet_name='Tabella')
                                     worksheet_table_hist = writer.sheets['Tabella']
                                     for idx, col in enumerate(df_to_write_hist):
-                                        try: series = df_to_write_hist[col]; max_len = max((series.astype(str).map(len).max(), len(str(series.name)))) + 3; worksheet_table_hist.column_dimensions[openpyxl.utils.get_column_letter(idx + 1)].width = max_len
+                                        try:
+                                            series = df_to_write_hist[col]
+                                            max_len = max((series.astype(str).map(len).max(), len(str(series.name)))) + 3
+                                            worksheet_table_hist.column_dimensions[openpyxl.utils.get_column_letter(idx + 1)].width = max_len
                                         except Exception as col_width_err: print(f"Errore agg colonna hist {col}: {col_width_err}")
 
                                 if _kaleido_installed:
                                     try:
-                                        img_bytes_hist = pio.to_image(fig_hist, format="png", width=900, height=500, scale=1.5); img_hist = Image(BytesIO(img_bytes_hist))
-                                        worksheet_chart_hist = writer.book.create_sheet(title='Grafico'); worksheet_chart_hist.add_image(img_hist, 'A1')
+                                        img_bytes_hist = pio.to_image(fig_hist, format="png", width=900, height=500, scale=1.5)
+                                        img_hist = Image(BytesIO(img_bytes_hist))
+                                        worksheet_chart_hist = writer.book.create_sheet(title='Grafico')
+                                        worksheet_chart_hist.add_image(img_hist, 'A1')
                                     except Exception as img_err_hist: st.warning(f"Impossibile esportare grafico istogramma: {img_err_hist}")
                                 else: st.warning("Kaleido mancante per export grafico istogramma.")
 
                             excel_data_hist = output_hist.getvalue()
                             st.download_button(label=f"Scarica Istogramma ({aggregation_level}, {selected_resource_type})", data=excel_data_hist, file_name=excel_filename_hist, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_hist")
 
-
                 except Exception as analysis_error_hist:
                     st.error(f"Errore durante l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
 
-        # --- [NUOVO v19.7] Debug Classificazione Risorse ---
+        # --- [MODIFICATO v19.7] Spostato Debug Classificazione Risorse QUI ---
         st.markdown("---")
         with st.expander("🔍 Debug: Classificazione Risorse"):
             df_res_class = st.session_state.get('resource_classification_debug')
             if df_res_class is not None and not df_res_class.empty:
-                st.dataframe(df_res_class, use_container_width=True, hide_index=True)
-                # Conta per tipo
+                st.write("Elenco di tutte le risorse trovate e come sono state classificate:")
+                st.dataframe(df_res_class, use_container_width=True, height=300, hide_index=True)
                 counts = df_res_class['Tipo Classificato'].value_counts().reset_index()
                 counts.columns = ['Tipo', 'Conteggio']
-                st.write("Conteggio Risorse per Tipo:")
+                st.write("Conteggio Totale per Tipo:")
                 st.dataframe(counts, hide_index=True)
             else:
                 st.warning("Nessuna risorsa trovata o mappa non generata.")
-        # --- FINE DEBUG ---
 
         # --- Debug Section (Invariata) ---
         # ... (Codice invariato) ...
