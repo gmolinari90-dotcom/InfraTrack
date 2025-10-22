@@ -1,4 +1,4 @@
-# --- v20.0 (Aggiunta Analisi Percorso Critico, Correzione Indentazione Debug) ---
+# --- v20.1 (Base v19.12 + Percorso Critico + Correzione Indentazione Debug) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -34,7 +34,7 @@ except locale.Error:
                 _locale_warning_shown = True
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v20.0", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v20.1", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 # ... (CSS invariato v17.12) ...
@@ -65,7 +65,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v20.0") # Version updated
+st.markdown("## 🚆 InfraTrack v20.1") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -399,7 +399,6 @@ if current_file_to_process is not None:
 
         # --- Analisi Curva S (Codice invariato da v18.3) ---
         if st.button("📈 Avvia Analisi Curva S", key="analyze_scurve"):
-            # ... (Codice Analisi SIL invariato) ...
             all_tasks_dataframe = st.session_state.get('all_tasks_data'); wbs_name_map = st.session_state.get('wbs_name_map', {})
             if all_tasks_dataframe is None or all_tasks_dataframe.empty: st.error("Errore: Dati attività non trovati.")
             elif not wbs_name_map: st.error("Errore: Mappa WBS->Nome non trovata.")
@@ -550,11 +549,9 @@ if current_file_to_process is not None:
                                     aggregated_hist['AvgDailyUnits'] = aggregated_hist['WorkHours'] / 8.0
 
                                 aggregated_hist = aggregated_hist.sort_values(by=['Date', 'ResourceName'])
-                                # --- [MODIFICATO v19.15] Formato Mese ITA ---
                                 aggregated_hist['Month_Num'] = aggregated_hist['Date'].dt.month
                                 aggregated_hist['Year_Num'] = aggregated_hist['Date'].dt.strftime('%y')
                                 aggregated_hist['Periodo'] = aggregated_hist['Month_Num'].map(italian_month_map) + '-' + aggregated_hist['Year_Num'] if aggregation_level == 'Mensile' else aggregated_hist['Date'].dt.strftime(date_format_display_hist)
-                                # ---
                                 aggregated_hist['AvgDailyUnits_Rounded'] = aggregated_hist['AvgDailyUnits'].round().astype(int)
 
                                 # --- VISUALIZZAZIONE MEZZI / ALTRO ---
@@ -622,11 +619,9 @@ if current_file_to_process is not None:
                                     aggregated_hist = aggregated_daily_total
                                     aggregated_hist['AvgDailyUnits'] = aggregated_hist['WorkHours'] / 8.0
 
-                                # --- [MODIFICATO v19.15] Formato Mese ITA ---
                                 aggregated_hist['Month_Num'] = aggregated_hist['Date'].dt.month
                                 aggregated_hist['Year_Num'] = aggregated_hist['Date'].dt.strftime('%y')
                                 aggregated_hist['Periodo'] = aggregated_hist['Month_Num'].map(italian_month_map) + '-' + aggregated_hist['Year_Num'] if aggregation_level == 'Mensile' else aggregated_hist['Date'].dt.strftime(date_format_display_hist)
-                                # ---
                                 aggregated_hist['AvgDailyUnits_Rounded'] = aggregated_hist['AvgDailyUnits'].round().astype(int)
 
                                 # --- VISUALIZZAZIONE MANODOPERA ---
@@ -659,7 +654,6 @@ if current_file_to_process is not None:
                                 output_hist = BytesIO()
                                 df_export_hist = aggregated_hist.copy()
                                 rename_map_excel_hist = {'Periodo': axis_title_hist, 'AvgDailyUnits_Rounded': col_name_hist}
-                                #df_export_hist['Date'] = df_export_hist['Date'].dt.strftime(date_format_excel_hist).str.capitalize() if aggregation_level=='Mensile' else df_export_hist['Date'].dt.strftime(date_format_excel_hist)
                                 df_to_write_hist = df_export_hist[['Periodo', 'AvgDailyUnits_Rounded']] # Usa Periodo già formattato
                                 df_to_write_hist = df_to_write_hist.rename(columns=rename_map_excel_hist)
 
@@ -708,7 +702,83 @@ if current_file_to_process is not None:
                     st.error(f"Errore durante l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
 
-        # --- [MODIFICATO v19.15] Debug Raggruppato e Indentato ---
+        # --- [NUOVO v20.0] Sezione Analisi Percorso Critico ---
+        st.markdown("---")
+        st.markdown("###### ⛓️ Analisi Percorso Critico")
+        
+        # Spiegazione Total Slack (Flessibilità)
+        st.caption("""
+        Il **Margine di Flessibilità Totale** (Total Slack) indica di quanto tempo un'attività può ritardare senza influenzare la data di fine totale del progetto.
+        Un'attività è considerata **critica** se ha un margine di flessibilità pari o inferiore a 0 giorni.
+        Impostando un valore (es. 5 giorni), puoi identificare anche le attività **quasi-critiche**.
+        """)
+        
+        # Selettore per margine di flessibilità
+        slack_threshold = st.number_input(
+            "Mostra attività con Flessibilità Totale (giorni) minore o uguale a:",
+            min_value=0, max_value=100, value=0, step=1,
+            key="slack_threshold_selector",
+            help="Default = 0 (percorso critico stretto). Aumenta per includere attività quasi-critiche."
+        )
+
+        if st.button("🔬 Avvia Analisi Criticità", key="analyze_critical_path"):
+            all_tasks_df = st.session_state.get('all_tasks_data')
+            
+            if all_tasks_df is None or all_tasks_df.empty:
+                st.error("Errore: Dati delle attività non trovati.")
+            else:
+                try:
+                    with st.spinner(f"Calcolo attività critiche (Flessibilità <= {slack_threshold} giorni)..."):
+                        
+                        # Assicura che le date siano nel formato corretto per il confronto
+                        tasks_df_crit = all_tasks_df.copy()
+                        tasks_df_crit['Start'] = pd.to_datetime(tasks_df_crit['Start'], errors='coerce').dt.date
+                        tasks_df_crit['Finish'] = pd.to_datetime(tasks_df_crit['Finish'], errors='coerce').dt.date
+                        
+                        # Filtro per attività (non riepiloghi)
+                        tasks_df_crit = tasks_df_crit[tasks_df_crit['Summary'] == False]
+                        
+                        # Filtro per Flessibilità Totale
+                        tasks_df_crit = tasks_df_crit[tasks_df_crit['TotalSlackDays'] <= slack_threshold]
+                        
+                        # Filtro per sovrapposizione con periodo selezionato
+                        # (Start <= Fine_Periodo) AND (Finish >= Inizio_Periodo)
+                        mask_overlap = (tasks_df_crit['Start'] <= selected_finish_date) & (tasks_df_crit['Finish'] >= selected_start_date)
+                        critical_tasks_in_period = tasks_df_crit[mask_overlap]
+
+                    if critical_tasks_in_period.empty:
+                        st.warning(f"Nessuna attività (non di riepilogo) trovata con Flessibilità Totale <= {slack_threshold} giorni nel periodo selezionato.")
+                    else:
+                        st.markdown(f"###### Attività Critiche e Quasi-Critiche nel Periodo (Flessibilità <= {slack_threshold} giorni)")
+                        
+                        # Formatta le date per la visualizzazione
+                        df_display_crit = critical_tasks_in_period.copy()
+                        df_display_crit['Start'] = df_display_crit['Start'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
+                        df_display_crit['Finish'] = df_display_crit['Finish'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
+                        
+                        # Colonne da mostrare
+                        cols_to_show = ['UID', 'Name', 'Start', 'Finish', 'Duration', 'WBS', 'TotalSlackDays']
+                        st.dataframe(df_display_crit[cols_to_show].sort_values(by='Start'), use_container_width=True, hide_index=True)
+
+                        # Bottone Download per percorso critico
+                        output_crit = BytesIO()
+                        with pd.ExcelWriter(output_crit, engine='openpyxl') as writer:
+                            df_display_crit[cols_to_show].to_excel(writer, index=False, sheet_name='Attivita_Critiche')
+                        excel_data_crit = output_crit.getvalue()
+                        st.download_button(
+                            label=f"Scarica Attività Critiche (Excel)",
+                            data=excel_data_crit,
+                            file_name=f"attivita_critiche_slack{slack_threshold}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key="download_critical"
+                        )
+                        
+                except Exception as analysis_error_crit:
+                    st.error(f"Errore durante l'analisi del percorso critico: {analysis_error_crit}")
+                    st.error(traceback.format_exc())
+        # --- FINE NUOVA SEZIONE ---
+
+        # --- [MODIFICATO v19.14] Debug Raggruppato e Indentato ---
         st.markdown("---")
         with st.expander("🔍 Area Debug (Avanzato)", collapsed=True):
             st.markdown("##### Debug: Classificazione Risorse")
