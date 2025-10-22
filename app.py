@@ -1,4 +1,4 @@
-# --- v19.1 (Separazione Risorse, Istogrammi non cumulati) ---
+# --- v19.2 (Aggregazione Differenziata Mezzi/Manodopera) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -33,7 +33,7 @@ except locale.Error:
                 _locale_warning_shown = True
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v19.1", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v19.2", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 # ... (CSS invariato v17.12) ...
@@ -60,7 +60,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v19.1") # Version updated
+st.markdown("## 🚆 InfraTrack v19.2") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -80,7 +80,6 @@ with col_btn_2:
     if st.button("🗑️ Svuota Cache", key="clear_cache_button", help="Elimina i dati temporanei calcolati (Forza ri-analisi @st.cache_data)"):
         st.cache_data.clear(); st.toast("Cache dei dati svuotata! I dati verranno ricalcolati alla prossima analisi.", icon="✅")
 
-
 # --- CARICAMENTO FILE ---
 # ... (Codice invariato v17.9) ...
 st.markdown("---"); st.markdown("#### 1. Carica la Baseline di Riferimento")
@@ -93,6 +92,7 @@ elif 'uploaded_file_state' not in st.session_state: uploaded_file = None
 
 # --- FUNZIONI HELPER ---
 # ... (get_minutes_per_day, format_duration_from_xml, get_tasks_to_distribute_for_sil, get_relevant_summary_name invariate) ...
+# ... (classify_resource, extract_timephased_work invariate da v19.1) ...
 @st.cache_data
 def get_minutes_per_day(_tree, _ns):
     minutes_per_day = 480
@@ -192,8 +192,6 @@ def get_relevant_summary_name(wbs_list, wbs_map):
             return f"Riepilogo: {common_wbs}"
     except Exception: return "Attività Multiple"
 
-# --- [NUOVA v19.1] Classificazione Risorse ---
-# Liste di keyword (case-insensitive)
 LABOR_KEYWORDS = [
     'operaio', 'ope ', 'addetto', 'squadra', 'assistente', 'tecnico', 'capo',
     'resp', 'ingegnere', 'geometra', 'sorvegliante', 'pilota', 'gruista',
@@ -208,41 +206,26 @@ EQUIPMENT_KEYWORDS = [
 ]
 
 def classify_resource(resource_name):
-    """Classifica una risorsa in 'Manodopera', 'Mezzi' o 'Altro'."""
     if not resource_name: return 'Altro'
     name_lower = resource_name.lower()
-    if any(keyword in name_lower for keyword in EQUIPMENT_KEYWORDS):
-        return 'Mezzi'
-    if any(keyword in name_lower for keyword in LABOR_KEYWORDS):
-        return 'Manodopera'
-    return 'Altro' # O potremmo defaultare a 'Manodopera' se preferito
-# --- FINE NUOVA FUNZIONE ---
+    if any(keyword in name_lower for keyword in EQUIPMENT_KEYWORDS): return 'Mezzi'
+    if any(keyword in name_lower for keyword in LABOR_KEYWORDS): return 'Manodopera'
+    return 'Altro'
 
-# --- [MODIFICATA v19.1] ESTRAZIONE LAVORO TIMEPHASED (con Classificazione) ---
 @st.cache_data
-def extract_timephased_work(_xml_tree, _namespaces, _resource_map): # Passa la mappa
-    """
-    Estrae i dati di Lavoro (Type=1) e classifica la risorsa.
-    Il lavoro ('Value') è in minuti.
-    """
+def extract_timephased_work(_xml_tree, _namespaces, _resource_map):
     daily_work_data = []
     assignments = _xml_tree.findall('.//msp:Assignment', namespaces=_namespaces)
-
     for ass in assignments:
         resource_uid_node = ass.find('msp:ResourceUID', namespaces=_namespaces)
         if resource_uid_node is None or resource_uid_node.text is None: continue
         resource_uid = resource_uid_node.text
-
-        # Classifica la risorsa usando la mappa
         resource_name = _resource_map.get(resource_uid, '')
         resource_type = classify_resource(resource_name)
-
         timephased_nodes = ass.findall('./msp:TimephasedData[msp:Type="1"]', namespaces=_namespaces)
-
         for node in timephased_nodes:
             start_date_str = node.findtext('msp:Start', namespaces=_namespaces)
-            value_str = node.findtext('msp:Value', namespaces=_namespaces) # Minuti (formato PT... o numero)
-
+            value_str = node.findtext('msp:Value', namespaces=_namespaces)
             if start_date_str and value_str:
                 try:
                     current_date = datetime.fromisoformat(start_date_str).date()
@@ -251,24 +234,12 @@ def extract_timephased_work(_xml_tree, _namespaces, _resource_map): # Passa la m
                          duration_obj = isodate.parse_duration(value_str)
                          work_minutes = duration_obj.total_seconds() / 60.0
                     else: work_minutes = float(value_str)
-
                     if work_minutes > 0:
-                        daily_work_data.append({
-                            'Date': current_date,
-                            'ResourceUID': resource_uid,
-                            'ResourceType': resource_type, # <<< Aggiunto Tipo
-                            'WorkMinutes': work_minutes
-                        })
+                        daily_work_data.append({'Date': current_date, 'ResourceUID': resource_uid, 'ResourceType': resource_type, 'WorkMinutes': work_minutes})
                 except Exception: pass
-
-    if not daily_work_data:
-        return pd.DataFrame(columns=['Date', 'ResourceUID', 'ResourceType', 'WorkMinutes'])
-
-    daily_df = pd.DataFrame(daily_work_data)
-    daily_df['Date'] = pd.to_datetime(daily_df['Date'])
+    if not daily_work_data: return pd.DataFrame(columns=['Date', 'ResourceUID', 'ResourceType', 'WorkMinutes'])
+    daily_df = pd.DataFrame(daily_work_data); daily_df['Date'] = pd.to_datetime(daily_df['Date'])
     return daily_df
-# --- FINE MODIFICA ---
-
 
 # --- INIZIO ANALISI ---
 current_file_to_process = st.session_state.get('uploaded_file_state')
@@ -276,6 +247,7 @@ if current_file_to_process is not None:
     if not st.session_state.get('file_processed_success', False) or current_file_to_process != st.session_state.get('last_processed_file'):
         with st.spinner('Caricamento e analisi file XML...'):
              try:
+                # ... (Parsing XML, estrazione dati task, popolamento wbs_name_map invariato) ...
                 current_file_to_process.seek(0); file_content_bytes = current_file_to_process.read()
                 parser = etree.XMLParser(recover=True); tree = etree.fromstring(file_content_bytes, parser=parser)
                 ns = {'msp': 'http://schemas.microsoft.com/project'}
@@ -294,12 +266,10 @@ if current_file_to_process is not None:
                 if project_start_date > project_finish_date: project_finish_date = project_start_date + timedelta(days=1)
                 st.session_state['project_name'] = project_name; st.session_state['formatted_cost'] = formatted_cost
                 st.session_state['project_start_date'] = project_start_date; st.session_state['project_finish_date'] = project_finish_date
-
                 potential_milestones = {}; all_tasks = tree.findall('.//msp:Task', namespaces=ns)
                 tup_tuf_pattern = re.compile(r'(?i)(TUP|TUF)\s*\d*'); all_tasks_data_list = []
                 wbs_name_map = {}
                 for task in all_tasks:
-                    # ... (Estrai dati task, popola wbs_name_map) ...
                     uid = task.findtext('msp:UID', namespaces=ns); name = task.findtext('msp:Name', namespaces=ns) or "";
                     start_str = task.findtext('msp:Start', namespaces=ns); finish_str = task.findtext('msp:Finish', namespaces=ns);
                     start_date = datetime.fromisoformat(start_str).date() if start_str else None; finish_date = datetime.fromisoformat(finish_str).date() if finish_str else None
@@ -324,7 +294,6 @@ if current_file_to_process is not None:
                         all_tasks_data_list.append({"UID": uid, "Name": name, "Start": start_date, "Finish": finish_date, "Duration": duration_formatted,
                                                     "Cost": cost_euros, "Milestone": is_milestone, "Summary": is_summary,
                                                     "WBS": wbs, "TotalSlackDays": total_slack_days})
-                    # ... (Logica TUP/TUF invariata) ...
                     match = tup_tuf_pattern.search(name)
                     if match:
                         tup_tuf_key = match.group(0).upper().strip(); duration_str_tup = task.findtext('msp:Duration', namespaces=ns)
@@ -359,17 +328,13 @@ if current_file_to_process is not None:
                     st.session_state['df_milestones_display'] = df_milestones[['Nome Completo', 'Durata', 'Data Inizio', 'Data Fine']]
                 else: st.session_state['df_milestones_display'] = None
                 st.session_state['all_tasks_data'] = pd.DataFrame(all_tasks_data_list)
-
-                # --- Estrai mappa risorse e dati lavoro (con classificazione) ---
+                # --- Estrai mappa risorse e dati lavoro ---
                 resources = tree.findall('.//msp:Resource', namespaces=ns)
                 resource_map = {res.findtext('msp:UID', namespaces=ns): res.findtext('msp:Name', namespaces=ns) or f"Risorsa UID {res.findtext('msp:UID', namespaces=ns)}" for res in resources if res.findtext('msp:UID', namespaces=ns)}
                 st.session_state['resource_map'] = resource_map
-
-                # Passa la mappa risorse alla funzione di estrazione
                 timephased_work_data = extract_timephased_work(tree, ns, resource_map)
                 st.session_state['timephased_work_data'] = timephased_work_data
                 # --- FINE NUOVO ---
-
                 current_file_to_process.seek(0); debug_content_bytes = current_file_to_process.read(2000);
                 try: st.session_state['debug_raw_text'] = '\n'.join(debug_content_bytes.decode('utf-8', errors='ignore').splitlines()[:50])
                 except Exception as decode_err: st.session_state['debug_raw_text'] = f"Errore decodifica debug: {decode_err}"
@@ -434,7 +399,7 @@ if current_file_to_process is not None:
                 try:
                     st.markdown(f"###### Analisi Curva S")
                     tasks_to_distribute = get_tasks_to_distribute_for_sil(all_tasks_dataframe.copy())
-                    if tasks_to_distribute.empty: st.error("Errore: Nessun costo valido trovato.")
+                    if tasks_to_distribute.empty: st.error("Errore: Nessun costo valido trovato per la distribuzione.")
                     else:
                         daily_cost_data = []; total_tasks = len(tasks_to_distribute); status_text = st.empty(); prog_bar = st.progress(0, text="Avvio calcolo distribuzione costi...")
                         for i, (_, task) in enumerate(tasks_to_distribute.iterrows()):
@@ -497,7 +462,7 @@ if current_file_to_process is not None:
                             else: st.warning(f"Nessun dato di costo trovato nel periodo selezionato.")
                 except Exception as analysis_error: st.error(f"Errore Analisi Avanzata: {analysis_error}"); st.error(traceback.format_exc())
 
-        # --- [MODIFICATO v19.1] Sezione Istogrammi Risorse ---
+        # --- [MODIFICATO v19.2] Sezione Istogrammi Risorse ---
         st.markdown("---")
         st.markdown("###### 📊 Istogrammi Risorse")
 
@@ -507,7 +472,7 @@ if current_file_to_process is not None:
             "Seleziona il tipo di risorsa da analizzare:",
             resource_type_options,
             key="resource_type_selector",
-            help="Filtra l'istogramma per tipo di risorsa."
+            help="Filtra l'istogramma per tipo di risorsa (Manodopera = totale, Mezzi = dettaglio)."
         )
 
         if st.button("📊 Avvia Analisi Istogrammi", key="analyze_histograms"):
@@ -522,14 +487,10 @@ if current_file_to_process is not None:
             else:
                 try:
                     with st.spinner(f"Calcolo distribuzione lavoro ({selected_resource_type})..."):
-                        # Copia per evitare modifiche al dataframe in cache
                         work_df_filtered = timephased_work_df.copy()
-
-                        # Filtra per tipo di risorsa (se non 'Tutte')
                         if selected_resource_type != 'Tutte':
                             work_df_filtered = work_df_filtered[work_df_filtered['ResourceType'] == selected_resource_type]
 
-                        # Filtra per periodo
                         selected_start_dt = datetime.combine(selected_start_date, datetime.min.time())
                         selected_finish_dt = datetime.combine(selected_finish_date, datetime.max.time())
                         mask_work = (work_df_filtered['Date'] >= selected_start_dt) & (work_df_filtered['Date'] <= selected_finish_dt)
@@ -538,75 +499,111 @@ if current_file_to_process is not None:
                         if filtered_work.empty:
                              st.warning(f"Nessun dato di lavoro trovato per '{selected_resource_type}' nel periodo selezionato.")
                         else:
-                            # Converte minuti in ore
                             filtered_work['WorkHours'] = filtered_work['WorkMinutes'] / 60.0
+                            filtered_work['ResourceName'] = filtered_work['ResourceUID'].map(resource_map).fillna('Sconosciuto')
 
-                            # Aggrega il lavoro per giorno (indipendentemente dalla risorsa specifica, per ora)
-                            aggregated_daily_work = filtered_work.groupby('Date')['WorkHours'].sum().reset_index()
+                            # Variabili comuni per formattazione
+                            date_format_display_hist = '%b-%y' if aggregation_level == 'Mensile' else '%d/%m/%Y'
+                            date_format_excel_hist = '%b-%y' if aggregation_level == 'Mensile' else '%d/%m/%Y'
+                            axis_title_hist = "Mese" if aggregation_level == 'Mensile' else "Giorno"
+                            col_name_hist = f"Ore {aggregation_level}"
+                            excel_filename_hist = f"Istogramma_Lavoro_{selected_resource_type.replace(' ', '_')}_{aggregation_level}.xlsx"
 
-                            # Prepara dati per tabella/grafico
-                            aggregated_data_hist = pd.DataFrame()
-                            date_format_display_hist = ""
-                            date_format_excel_hist = ""
-                            axis_title_hist = ""
-                            col_name_hist = ""
-                            excel_filename_hist = f"Istogramma_Lavoro_{selected_resource_type.replace(' ', '_')}_{aggregation_level}.xlsx" # Nome file dinamico
+                            # --- Logica differenziata ---
+                            if selected_resource_type == 'Mezzi':
+                                # Dettaglio per Mezzo
+                                # Aggrega per Giorno E Nome Risorsa
+                                aggregated_daily_work_detail = filtered_work.groupby(['Date', 'ResourceName'])['WorkHours'].sum().reset_index()
 
-                            if aggregation_level == 'Mensile':
-                                aggregated_monthly = aggregated_daily_work.set_index('Date')['WorkHours'].resample('ME').sum().reset_index()
-                                aggregated_data_hist = aggregated_monthly
-                                date_format_display_hist = '%b-%y'; date_format_excel_hist = '%b-%y'
-                                aggregated_data_hist['Periodo'] = aggregated_data_hist['Date'].dt.strftime(date_format_display_hist).str.capitalize()
-                                axis_title_hist = "Mese"; col_name_hist = "Ore Mensili"
-                            else: # Giornaliera
-                                aggregated_data_hist = aggregated_daily_work.copy()
-                                date_format_display_hist = '%d/%m/%Y'; date_format_excel_hist = '%d/%m/%Y'
-                                aggregated_data_hist['Periodo'] = aggregated_data_hist['Date'].dt.strftime(date_format_display_hist)
-                                axis_title_hist = "Giorno"; col_name_hist = "Ore Giornaliere"
+                                # Aggrega per Periodo (Mese/Giorno) E Nome Risorsa
+                                if aggregation_level == 'Mensile':
+                                    aggregated_hist = aggregated_daily_work_detail.set_index('Date').groupby('ResourceName')['WorkHours'].resample('ME').sum().reset_index()
+                                else: # Giornaliera
+                                    aggregated_hist = aggregated_daily_work_detail # Già giornaliero
 
-                            # Rimuoviamo il calcolo cumulativo
-                            # aggregated_data_hist['Ore Cumulate'] = aggregated_data_hist['WorkHours'].cumsum()
+                                aggregated_hist['Periodo'] = aggregated_hist['Date'].dt.strftime(date_format_display_hist).str.capitalize()
 
-                            # --- VISUALIZZAZIONE ISTOGRAMMI (SENZA CUMULATO) ---
-                            st.markdown(f"###### Tabella Lavoro {selected_resource_type} ({aggregation_level})")
-                            df_display_hist = aggregated_data_hist.copy()
-                            df_display_hist.rename(columns={'WorkHours': col_name_hist}, inplace=True)
-                            df_display_hist[col_name_hist] = df_display_hist[col_name_hist].apply(lambda x: f"{x:,.2f} ore")
-                            # Rimuoviamo colonna cumulato
-                            st.dataframe(df_display_hist[['Periodo', col_name_hist]], use_container_width=True, hide_index=True)
+                                # --- VISUALIZZAZIONE MEZZI ---
+                                st.markdown(f"###### Tabella Dettaglio Lavoro Mezzi ({aggregation_level})")
+                                df_display_hist = aggregated_hist.copy()
+                                df_display_hist.rename(columns={'WorkHours': col_name_hist}, inplace=True)
+                                df_display_hist[col_name_hist] = df_display_hist[col_name_hist].apply(lambda x: f"{x:,.2f} ore")
+                                # Mostra tabella lunga (Periodo, ResourceName, Ore)
+                                st.dataframe(df_display_hist[['Periodo', 'ResourceName', col_name_hist]].sort_values(by=['Date', 'ResourceName']), use_container_width=True, hide_index=True)
 
-                            st.markdown(f"###### Grafico Istogramma Lavoro {selected_resource_type} ({aggregation_level})")
-                            fig_hist = go.Figure()
-                            # Solo barre
-                            fig_hist.add_trace(go.Bar(
-                                x=aggregated_data_hist['Periodo'],
-                                y=aggregated_data_hist['WorkHours'],
-                                name=f'Ore {aggregation_level}',
-                                marker_color='mediumseagreen' # Verde
-                            ))
-                            # Rimuoviamo Scatter cumulato
-                            fig_hist.update_layout(
-                                title=f'Istogramma Lavoro ({selected_resource_type}) - Ore {aggregation_level.replace("a","e")}',
-                                xaxis_title=axis_title_hist,
-                                yaxis=dict(title=f"Ore {aggregation_level.replace('a','e')}"),
-                                # Rimuoviamo yaxis2
-                                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
-                                hovermode="x unified",
-                                template="plotly"
-                            )
-                            st.plotly_chart(fig_hist, use_container_width=True)
+                                st.markdown(f"###### Grafico Istogramma Lavoro Mezzi ({aggregation_level})")
+                                fig_hist = go.Figure()
+                                # Crea una traccia (barra) per ogni mezzo
+                                for name, group in aggregated_hist.groupby('ResourceName'):
+                                    fig_hist.add_trace(go.Bar(
+                                        x=group['Periodo'],
+                                        y=group['WorkHours'],
+                                        name=name,
+                                        hovertemplate=f'<b>{axis_title_hist}</b>: %{{x}}<br><b>Mezzo</b>: {name}<br><b>Ore</b>: %{{y:,.2f}}h<extra></extra>'
+                                    ))
+                                fig_hist.update_layout(
+                                    title=f'Istogramma Lavoro Mezzi - Ore {aggregation_level.replace("a","e")} per Mezzo',
+                                    xaxis_title=axis_title_hist,
+                                    yaxis=dict(title=f"Ore {aggregation_level.replace('a','e')}"),
+                                    barmode='group', # Barre raggruppate
+                                    legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+                                    hovermode="x unified",
+                                    template="plotly"
+                                )
+                                st.plotly_chart(fig_hist, use_container_width=True)
 
-                            # --- EXPORT EXCEL ISTOGRAMMI (SENZA CUMULATO) ---
-                            output_hist = BytesIO()
-                            df_export_hist = aggregated_data_hist.copy()
-                            # Rimuoviamo colonna cumulato dalla mappa
-                            rename_map_excel_hist = {'Date': axis_title_hist, 'WorkHours': col_name_hist.replace('(€)', '(ore)')}
-                            df_export_hist['Date'] = df_export_hist['Date'].dt.strftime(date_format_excel_hist).str.capitalize() if aggregation_level=='Mensile' else df_export_hist['Date'].dt.strftime(date_format_excel_hist)
+                                # --- EXPORT EXCEL MEZZI ---
+                                output_hist = BytesIO()
+                                df_export_hist = aggregated_hist.copy()
+                                rename_map_excel_hist = {'Date': axis_title_hist, 'WorkHours': col_name_hist, 'ResourceName': 'Mezzo'}
+                                df_export_hist['Date'] = df_export_hist['Date'].dt.strftime(date_format_excel_hist).str.capitalize() if aggregation_level=='Mensile' else df_export_hist['Date'].dt.strftime(date_format_excel_hist)
+                                df_to_write_hist = df_export_hist[['Date', 'ResourceName', 'WorkHours']] # Colonne per Excel
+                                df_to_write_hist = df_to_write_hist.rename(columns=rename_map_excel_hist)
 
-                            # Rimuoviamo colonna cumulato dalla selezione
-                            df_to_write_hist = df_export_hist[['Date', 'WorkHours']]
-                            df_to_write_hist = df_to_write_hist.rename(columns=rename_map_excel_hist)
+                            else: # Manodopera, Altro, Tutte
+                                # Somma Totale
+                                aggregated_daily_work_total = filtered_work.groupby('Date')['WorkHours'].sum().reset_index()
 
+                                if aggregation_level == 'Mensile':
+                                    aggregated_hist = aggregated_daily_work_total.set_index('Date')['WorkHours'].resample('ME').sum().reset_index()
+                                else: # Giornaliera
+                                    aggregated_hist = aggregated_daily_work_total
+
+                                aggregated_hist['Periodo'] = aggregated_hist['Date'].dt.strftime(date_format_display_hist).str.capitalize()
+
+                                # --- VISUALIZZAZIONE MANODOPERA/ALTRO/TUTTE ---
+                                st.markdown(f"###### Tabella Totale Lavoro {selected_resource_type} ({aggregation_level})")
+                                df_display_hist = aggregated_hist.copy()
+                                df_display_hist.rename(columns={'WorkHours': col_name_hist}, inplace=True)
+                                df_display_hist[col_name_hist] = df_display_hist[col_name_hist].apply(lambda x: f"{x:,.2f} ore")
+                                st.dataframe(df_display_hist[['Periodo', col_name_hist]], use_container_width=True, hide_index=True)
+
+                                st.markdown(f"###### Grafico Istogramma Totale Lavoro {selected_resource_type} ({aggregation_level})")
+                                fig_hist = go.Figure()
+                                fig_hist.add_trace(go.Bar(
+                                    x=aggregated_hist['Periodo'],
+                                    y=aggregated_hist['WorkHours'],
+                                    name=f'Ore {aggregation_level}',
+                                    marker_color='mediumseagreen'
+                                ))
+                                fig_hist.update_layout(
+                                    title=f'Istogramma Totale Lavoro ({selected_resource_type}) - Ore {aggregation_level.replace("a","e")}',
+                                    xaxis_title=axis_title_hist,
+                                    yaxis=dict(title=f"Ore {aggregation_level.replace('a','e')}"),
+                                    hovermode="x unified",
+                                    template="plotly"
+                                )
+                                st.plotly_chart(fig_hist, use_container_width=True)
+
+                                # --- EXPORT EXCEL MANODOPERA/ALTRO/TUTTE ---
+                                output_hist = BytesIO()
+                                df_export_hist = aggregated_hist.copy()
+                                rename_map_excel_hist = {'Date': axis_title_hist, 'WorkHours': col_name_hist}
+                                df_export_hist['Date'] = df_export_hist['Date'].dt.strftime(date_format_excel_hist).str.capitalize() if aggregation_level=='Mensile' else df_export_hist['Date'].dt.strftime(date_format_excel_hist)
+                                df_to_write_hist = df_export_hist[['Date', 'WorkHours']]
+                                df_to_write_hist = df_to_write_hist.rename(columns=rename_map_excel_hist)
+
+                            # --- Export Excel (Comune a entrambi i casi) ---
                             with pd.ExcelWriter(output_hist, engine='openpyxl') as writer:
                                 df_to_write_hist.to_excel(writer, index=False, sheet_name='Tabella')
                                 worksheet_table_hist = writer.sheets['Tabella']
@@ -632,6 +629,7 @@ if current_file_to_process is not None:
                 except Exception as analysis_error_hist:
                     st.error(f"Errore durante l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
+
 
         # --- Debug Section (Invariata) ---
         # ... (Codice invariato) ...
