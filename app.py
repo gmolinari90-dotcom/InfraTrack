@@ -1,4 +1,4 @@
-# --- v17.15 (Colori Grafico Blu/Rosso, Nomi File Excel) ---
+# --- v19.0 (Implementazione Istogrammi Risorse - Totale Lavoro) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -33,7 +33,7 @@ except locale.Error:
                 _locale_warning_shown = True
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v17.15", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v19.0", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 # ... (CSS invariato v17.12) ...
@@ -54,12 +54,13 @@ st.markdown("""
     div[data-testid="stDateInput"] label { font-size: 0.85rem !important; }
     div[data-testid="stDateInput"] input { font-size: 0.85rem !important; padding: 0.3rem 0.5rem !important;}
     .stCaptionContainer { font-size: 0.75rem !important; margin-top: -0.5rem; margin-bottom: 1rem;}
+    .progress-text { font-size: 0.8rem; color: grey; margin-left: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v17.15") # Version updated
+st.markdown("## 🚆 InfraTrack v19.0") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -91,7 +92,7 @@ if uploaded_file is not None and uploaded_file != st.session_state.get('uploaded
 elif 'uploaded_file_state' not in st.session_state: uploaded_file = None
 
 # --- FUNZIONI HELPER ---
-# ... (get_minutes_per_day, format_duration_from_xml, calculate_daily_distribution_bottom_up, get_relevant_summary_name invariate) ...
+# ... (get_minutes_per_day, format_duration_from_xml, get_tasks_to_distribute_for_sil, get_relevant_summary_name invariate) ...
 @st.cache_data
 def get_minutes_per_day(_tree, _ns):
     minutes_per_day = 480
@@ -125,15 +126,13 @@ def format_duration_from_xml(duration_str):
     except Exception: return "N/D"
 
 @st.cache_data
-def calculate_daily_distribution_bottom_up(_tasks_dataframe):
-    daily_cost_data = []
+def get_tasks_to_distribute_for_sil(_tasks_dataframe):
     tasks_df = _tasks_dataframe.copy()
     tasks_df['Start'] = pd.to_datetime(tasks_df['Start'], errors='coerce').dt.date
     tasks_df['Finish'] = pd.to_datetime(tasks_df['Finish'], errors='coerce').dt.date
     tasks_df['WBS'] = tasks_df['WBS'].astype(str)
     valid_tasks_df = tasks_df.dropna(subset=['Start', 'Finish', 'Cost', 'WBS'])
     valid_tasks_df = valid_tasks_df[valid_tasks_df['Cost'] > 0]
-    all_valid_wbs = set(valid_tasks_df['WBS'])
     tasks_to_distribute_list = []
     processed_indices = set()
     for index, task in valid_tasks_df.iterrows():
@@ -150,30 +149,14 @@ def calculate_daily_distribution_bottom_up(_tasks_dataframe):
             descendant_indices = valid_tasks_df[valid_tasks_df['WBS'].str.startswith(task_wbs + '.')].index
             processed_indices.update(descendant_indices)
     if not tasks_to_distribute_list:
-         st.session_state['debug_task_count'] = 0; st.session_state['debug_total_cost'] = 0
-         return pd.DataFrame(columns=['Date', 'Value', 'WBS'])
-    tasks_to_distribute = pd.DataFrame(tasks_to_distribute_list)
-    st.session_state['debug_task_count'] = len(tasks_to_distribute)
-    st.session_state['debug_total_cost'] = tasks_to_distribute['Cost'].sum()
-    for _, task in tasks_to_distribute.iterrows():
-        start_date = task['Start']
-        finish_date = task['Finish']
-        total_cost = task['Cost']
-        task_wbs = task['WBS']
-        duration_days = (finish_date - start_date).days
-        if duration_days < 0: continue
-        number_of_days_in_period = duration_days + 1
-        if number_of_days_in_period <= 0:
-             value_per_day = total_cost; number_of_days_in_period = 1
-        else: value_per_day = total_cost / number_of_days_in_period
-        for i in range(number_of_days_in_period):
-            current_date = start_date + timedelta(days=i)
-            daily_cost_data.append({'Date': current_date, 'Value': value_per_day, 'WBS': task_wbs})
-    if not daily_cost_data:
-        return pd.DataFrame(columns=['Date', 'Value', 'WBS'])
-    daily_dataframe = pd.DataFrame(daily_cost_data)
-    daily_dataframe['Date'] = pd.to_datetime(daily_dataframe['Date'])
-    return daily_dataframe
+        tasks_to_distribute_df = pd.DataFrame()
+    else:
+        tasks_to_distribute_df = pd.DataFrame(tasks_to_distribute_list)
+    # Aggiorna conteggio e costo totale per debug (gestisce df vuoto)
+    st.session_state['debug_task_count'] = len(tasks_to_distribute_df)
+    st.session_state['debug_total_cost'] = tasks_to_distribute_df['Cost'].sum() if not tasks_to_distribute_df.empty else 0
+    return tasks_to_distribute_df
+
 
 def get_relevant_summary_name(wbs_list, wbs_map):
     if not wbs_list: return "N/D"
@@ -211,13 +194,69 @@ def get_relevant_summary_name(wbs_list, wbs_map):
             return f"Riepilogo: {common_wbs}"
     except Exception: return "Attività Multiple"
 
+# --- [NUOVA v19.0] FUNZIONE ESTRAZIONE LAVORO TIMEPHASED ---
+@st.cache_data
+def extract_timephased_work(_xml_tree, _namespaces):
+    """
+    Estrae i dati di Lavoro (Type=1) distribuiti nel tempo (Timephased)
+    dalle Assegnazioni (Assignments) per costruire gli istogrammi.
+    Include l'UID della Risorsa.
+    Il lavoro ('Value') è in minuti.
+    """
+    daily_work_data = []
+    assignments = _xml_tree.findall('.//msp:Assignment', namespaces=_namespaces)
+
+    for ass in assignments:
+        resource_uid_node = ass.find('msp:ResourceUID', namespaces=_namespaces)
+        if resource_uid_node is None or resource_uid_node.text is None: continue # Salta se manca UID risorsa
+        resource_uid = resource_uid_node.text
+
+        # Cerca dati Lavoro (Type 1) direttamente sotto Assignment
+        timephased_nodes = ass.findall('./msp:TimephasedData[msp:Type="1"]', namespaces=_namespaces)
+
+        for node in timephased_nodes:
+            start_date_str = node.findtext('msp:Start', namespaces=_namespaces)
+            value_str = node.findtext('msp:Value', namespaces=_namespaces) # Questo è in minuti
+
+            if start_date_str and value_str:
+                try:
+                    current_date = datetime.fromisoformat(start_date_str).date()
+                    # Converte PT...H...M...S in minuti totali
+                    if 'PT' in value_str:
+                         duration_obj = isodate.parse_duration(value_str)
+                         work_minutes = duration_obj.total_seconds() / 60.0
+                    else:
+                         # Assume siano già minuti se non è formato ISO Duration
+                         work_minutes = float(value_str)
+
+                    if work_minutes > 0:
+                        daily_work_data.append({
+                            'Date': current_date,
+                            'ResourceUID': resource_uid,
+                            'WorkMinutes': work_minutes
+                        })
+                except Exception as e:
+                    # Logga l'errore per debug, ma non bloccare
+                    # print(f"Errore parsing Timephased Work: {e}, Valore: {value_str}")
+                    pass # Ignora nodi malformati o con valori strani
+
+    if not daily_work_data:
+        return pd.DataFrame(columns=['Date', 'ResourceUID', 'WorkMinutes'])
+
+    daily_df = pd.DataFrame(daily_work_data)
+    daily_df['Date'] = pd.to_datetime(daily_df['Date'])
+
+    # Ritorna il dataframe DETTAGLIATO (giorno per giorno, risorsa per risorsa)
+    return daily_df
+# --- FINE NUOVA FUNZIONE ---
+
+
 # --- INIZIO ANALISI ---
 current_file_to_process = st.session_state.get('uploaded_file_state')
 if current_file_to_process is not None:
     if not st.session_state.get('file_processed_success', False) or current_file_to_process != st.session_state.get('last_processed_file'):
-        with st.spinner('Caricamento e analisi completa del file in corso...'):
+        with st.spinner('Caricamento e analisi file XML...'): # Spinner solo per il parsing iniziale
              try:
-                # ... (Parsing XML, estrazione dati task, popolamento wbs_name_map invariato) ...
                 current_file_to_process.seek(0); file_content_bytes = current_file_to_process.read()
                 parser = etree.XMLParser(recover=True); tree = etree.fromstring(file_content_bytes, parser=parser)
                 ns = {'msp': 'http://schemas.microsoft.com/project'}
@@ -236,10 +275,12 @@ if current_file_to_process is not None:
                 if project_start_date > project_finish_date: project_finish_date = project_start_date + timedelta(days=1)
                 st.session_state['project_name'] = project_name; st.session_state['formatted_cost'] = formatted_cost
                 st.session_state['project_start_date'] = project_start_date; st.session_state['project_finish_date'] = project_finish_date
+
                 potential_milestones = {}; all_tasks = tree.findall('.//msp:Task', namespaces=ns)
                 tup_tuf_pattern = re.compile(r'(?i)(TUP|TUF)\s*\d*'); all_tasks_data_list = []
                 wbs_name_map = {}
                 for task in all_tasks:
+                    # ... (Estrai dati task come prima) ...
                     uid = task.findtext('msp:UID', namespaces=ns); name = task.findtext('msp:Name', namespaces=ns) or "";
                     start_str = task.findtext('msp:Start', namespaces=ns); finish_str = task.findtext('msp:Finish', namespaces=ns);
                     start_date = datetime.fromisoformat(start_str).date() if start_str else None; finish_date = datetime.fromisoformat(finish_str).date() if finish_str else None
@@ -264,6 +305,7 @@ if current_file_to_process is not None:
                         all_tasks_data_list.append({"UID": uid, "Name": name, "Start": start_date, "Finish": finish_date, "Duration": duration_formatted,
                                                     "Cost": cost_euros, "Milestone": is_milestone, "Summary": is_summary,
                                                     "WBS": wbs, "TotalSlackDays": total_slack_days})
+                    # ... (Logica TUP/TUF invariata) ...
                     match = tup_tuf_pattern.search(name)
                     if match:
                         tup_tuf_key = match.group(0).upper().strip(); duration_str_tup = task.findtext('msp:Duration', namespaces=ns)
@@ -281,7 +323,9 @@ if current_file_to_process is not None:
                         elif not is_pure_milestone_duration:
                             if existing_duration_seconds == 0: potential_milestones[tup_tuf_key] = current_task_data
                             elif duration_seconds > existing_duration_seconds: potential_milestones[tup_tuf_key] = current_task_data
+
                 st.session_state['wbs_name_map'] = wbs_name_map
+                # ... (Salvataggio TUP/TUF invariato) ...
                 final_milestones_data = []
                 for key in potential_milestones:
                     data = potential_milestones[key]
@@ -297,6 +341,16 @@ if current_file_to_process is not None:
                     st.session_state['df_milestones_display'] = df_milestones[['Nome Completo', 'Durata', 'Data Inizio', 'Data Fine']]
                 else: st.session_state['df_milestones_display'] = None
                 st.session_state['all_tasks_data'] = pd.DataFrame(all_tasks_data_list)
+
+                # --- [NUOVO v19.0] Estrai mappa risorse e dati lavoro ---
+                resources = tree.findall('.//msp:Resource', namespaces=ns)
+                resource_map = {res.findtext('msp:UID', namespaces=ns): res.findtext('msp:Name', namespaces=ns) or f"Risorsa UID {res.findtext('msp:UID', namespaces=ns)}" for res in resources if res.findtext('msp:UID', namespaces=ns)}
+                st.session_state['resource_map'] = resource_map
+
+                timephased_work_data = extract_timephased_work(tree, ns)
+                st.session_state['timephased_work_data'] = timephased_work_data
+                # --- FINE NUOVO ---
+
                 current_file_to_process.seek(0); debug_content_bytes = current_file_to_process.read(2000);
                 try: st.session_state['debug_raw_text'] = '\n'.join(debug_content_bytes.decode('utf-8', errors='ignore').splitlines()[:50])
                 except Exception as decode_err: st.session_state['debug_raw_text'] = f"Errore decodifica debug: {decode_err}"
@@ -331,7 +385,6 @@ if current_file_to_process is not None:
 
 
         # --- Sezione 3: Selezione Periodo e Analisi ---
-        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
         if not default_start: default_start = date.today()
@@ -344,195 +397,222 @@ if current_file_to_process is not None:
             min_end_date = selected_start_date; actual_default_finish = max(default_finish, min_end_date)
             reasonable_max_date = actual_default_finish + timedelta(days=10*365)
             selected_finish_date = st.date_input("Data Fine", value=actual_default_finish, min_value=min_end_date, max_value=reasonable_max_date, format="DD/MM/YYYY", key="finish_date_selector")
-        st.markdown("##### 📦 Seleziona Aggregazione Dati")
-        aggregation_level = st.radio("Scegli il livello di dettaglio per l'analisi:", ('Mensile', 'Giornaliera'), key="aggregation_selector", horizontal=True, help="Scegli 'Giornaliera' per visualizzare i dettagli e il nome del riepilogo WBS.")
 
+        st.markdown("##### 📦 Seleziona Aggregazione Dati")
+        # Unico selettore per SIL e Istogrammi
+        aggregation_level = st.radio(
+            "Scegli il livello di dettaglio per l'analisi:",
+            ('Mensile', 'Giornaliera'), key="aggregation_selector", horizontal=True,
+            help="Scegli 'Giornaliera' per visualizzare i dettagli giornalieri."
+        )
 
         # --- Analisi Dettagliate ---
         st.markdown("---"); st.markdown("##### 📊 Analisi Dettagliate")
 
+        # --- Analisi Curva S (Codice invariato da v18.3) ---
         if st.button("📈 Avvia Analisi Curva S", key="analyze_scurve"):
-
+            # ... (Codice Analisi SIL invariato) ...
             all_tasks_dataframe = st.session_state.get('all_tasks_data')
             wbs_name_map = st.session_state.get('wbs_name_map', {})
-
-            if all_tasks_dataframe is None or all_tasks_dataframe.empty:
-                st.error("Errore: Dati delle attività non trovati. Impossibile calcolare la Curva S.")
-            elif not wbs_name_map:
-                 st.error("Errore: Mappa WBS->Nome non trovata. Ricaricare il file.")
+            if all_tasks_dataframe is None or all_tasks_dataframe.empty: st.error("Errore: Dati attività non trovati.")
+            elif not wbs_name_map: st.error("Errore: Mappa WBS->Nome non trovata.")
             else:
                 try:
                     st.markdown(f"###### Analisi Curva S")
-
-                    with st.spinner(f"Calcolo distribuzione costi..."):
-                        detailed_daily_cost_df = calculate_daily_distribution_bottom_up(all_tasks_dataframe.copy())
-
-                    if detailed_daily_cost_df.empty:
-                        st.error("Errore: Nessun costo valido trovato per la distribuzione.")
-                        st.warning("Impossibile calcolare la Curva S. (Nessuna attività trovata con <Cost> > 0 che soddisfi la logica WBS Bottom-Up).")
-
+                    tasks_to_distribute = get_tasks_to_distribute_for_sil(all_tasks_dataframe.copy())
+                    if tasks_to_distribute.empty: st.error("Errore: Nessun costo valido trovato per la distribuzione.")
                     else:
+                        daily_cost_data = []
+                        total_tasks = len(tasks_to_distribute); status_text = st.empty(); prog_bar = st.progress(0, text="Avvio calcolo distribuzione costi...")
+                        for i, (_, task) in enumerate(tasks_to_distribute.iterrows()):
+                            start_date_task = task['Start']; finish_date_task = task['Finish']; total_cost_task = task['Cost']; task_wbs = task['WBS']
+                            duration_days = (finish_date_task - start_date_task).days
+                            if duration_days < 0: continue
+                            number_of_days_in_period = duration_days + 1
+                            if number_of_days_in_period <= 0: value_per_day = total_cost_task; number_of_days_in_period = 1
+                            else: value_per_day = total_cost_task / number_of_days_in_period
+                            for d in range(number_of_days_in_period):
+                                current_date = start_date_task + timedelta(days=d)
+                                daily_cost_data.append({'Date': current_date, 'Value': value_per_day, 'WBS': task_wbs})
+                            percentage = (i + 1) / total_tasks
+                            prog_bar.progress(percentage, text=f"Calcolo distribuzione costi: {percentage:.0%}")
+                        prog_bar.empty(); status_text.empty()
+                        if not daily_cost_data: st.error("Errore: Nessun dato di costo generato.")
+                        else:
+                            detailed_daily_cost_df = pd.DataFrame(daily_cost_data); detailed_daily_cost_df['Date'] = pd.to_datetime(detailed_daily_cost_df['Date'])
+                            aggregated_daily_raw = detailed_daily_cost_df.groupby('Date').agg(Value=('Value', 'sum'), WBS_List=('WBS', lambda x: list(set(x)))).reset_index()
+                            selected_start_dt = datetime.combine(selected_start_date, datetime.min.time()); selected_finish_dt = datetime.combine(selected_finish_date, datetime.max.time())
+                            mask_cost = (aggregated_daily_raw['Date'] >= selected_start_dt) & (aggregated_daily_raw['Date'] <= selected_finish_dt)
+                            filtered_cost = aggregated_daily_raw.loc[mask_cost]
+                            if not filtered_cost.empty:
+                                aggregated_data = pd.DataFrame(); display_columns = []; plot_custom_data = None
+                                col_summary_name = "Riepilogo WBS"; date_format_display = ""; date_format_excel = ""; excel_filename = ""
+                                if aggregation_level == 'Mensile':
+                                    aggregated_values = filtered_cost.set_index('Date')['Value'].resample('ME').sum().reset_index(); aggregated_data = aggregated_values
+                                    date_format_display = '%b-%y'; date_format_excel = '%b-%y'; aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime(date_format_display).str.capitalize()
+                                    axis_title = "Mese"; col_name = "Costo Mensile (€)"; display_columns = ['Periodo', col_name, 'Costo Cumulato (€)']; excel_filename = "Dati_SIL_Mensili.xlsx"
+                                else: # Giornaliera
+                                    aggregated_daily = filtered_cost.copy(); aggregated_daily[col_summary_name] = aggregated_daily['WBS_List'].apply(lambda l: get_relevant_summary_name(l, wbs_name_map))
+                                    aggregated_data = aggregated_daily; date_format_display = '%d/%m/%Y'; date_format_excel = '%d/%m/%Y'; aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime(date_format_display)
+                                    axis_title = "Giorno"; col_name = "Costo Giornaliero (€)"; display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', col_summary_name]; plot_custom_data = aggregated_data[col_summary_name]; excel_filename = "Dati_SIL_Giornalieri.xlsx"
+                                aggregated_data['Costo Cumulato (€)'] = aggregated_data['Value'].cumsum()
+                                st.markdown(f"###### Tabella Dati SIL Aggregati ({aggregation_level})"); df_display_sil = aggregated_data.copy(); df_display_sil.rename(columns={'Value': col_name}, inplace=True)
+                                df_display_sil[col_name] = df_display_sil[col_name].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")); df_display_sil['Costo Cumulato (€)'] = df_display_sil['Costo Cumulato (€)'].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                                st.dataframe(df_display_sil[display_columns], use_container_width=True, hide_index=True)
+                                st.markdown(f"###### Grafico Curva S ({aggregation_level})"); fig_sil = go.Figure()
+                                hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {aggregation_level}</b>: %{{y:,.2f}}€<extra></extra>'; hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<extra></extra>'
+                                if aggregation_level == 'Giornaliera': hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {col_name}</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>'; hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>'
+                                fig_sil.add_trace(go.Bar(x=aggregated_data['Periodo'], y=aggregated_data['Value'], name=f'Costo {aggregation_level}', customdata=plot_custom_data, hovertemplate=hovertemplate_bar, marker_color='royalblue'))
+                                fig_sil.add_trace(go.Scatter(x=aggregated_data['Periodo'], y=aggregated_data['Costo Cumulato (€)'], name=f'Costo Cumulato', mode='lines+markers', yaxis='y2', customdata=plot_custom_data, hovertemplate=hovertemplate_scatter, line_color='crimson', marker_color='crimson'))
+                                fig_sil.update_layout(title=f'Curva S - Costo {aggregation_level.replace("a", "o")} e Cumulato', xaxis_title=axis_title, yaxis=dict(title=f"Costo {aggregation_level.replace('a', 'o')} (€)"), yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"), legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01), hovermode="x unified", template="plotly")
+                                st.plotly_chart(fig_sil, use_container_width=True)
+                                output_sil = BytesIO(); df_export = aggregated_data.copy(); cols_to_select_excel = []; rename_map_excel = {}; excel_sheet_name = 'Tabella'
+                                if aggregation_level == 'Mensile': cols_to_select_excel = ['Date', 'Value', 'Costo Cumulato (€)']; rename_map_excel = {'Date': 'Mese', 'Value': 'Costo Mensile (€)'}; df_export['Date'] = df_export['Date'].dt.strftime(date_format_excel).str.capitalize()
+                                else: cols_to_select_excel = ['Date', 'Value', 'Costo Cumulato (€)', col_summary_name]; rename_map_excel = {'Date': 'Giorno', 'Value': 'Costo Giornaliero (€)', col_summary_name: 'Riepilogo WBS'}; df_export['Date'] = df_export['Date'].dt.strftime(date_format_excel)
+                                df_to_write = df_export[cols_to_select_excel]; df_to_write = df_to_write.rename(columns=rename_map_excel)
+                                with pd.ExcelWriter(output_sil, engine='openpyxl') as writer:
+                                    df_to_write.to_excel(writer, index=False, sheet_name=excel_sheet_name); worksheet_table = writer.sheets[excel_sheet_name]
+                                    for idx, col in enumerate(df_to_write):
+                                        try: series = df_to_write[col]; max_len = max((series.astype(str).map(len).max(), len(str(series.name)))) + 3; worksheet_table.column_dimensions[openpyxl.utils.get_column_letter(idx + 1)].width = max_len
+                                        except Exception as cw_err: print(f"Err col {col}: {cw_err}")
+                                    if _kaleido_installed:
+                                        try: img_bytes = pio.to_image(fig_sil, format="png", width=900, height=500, scale=1.5); img = Image(BytesIO(img_bytes)); worksheet_chart = writer.book.create_sheet(title='Grafico'); worksheet_chart.add_image(img, 'A1')
+                                        except Exception as img_err: st.warning(f"Err exp grafico: {img_err}")
+                                    else: st.warning("Kaleido mancante.")
+                                excel_data_sil = output_sil.getvalue()
+                                st.download_button(label=f"Scarica SIL ({aggregation_level})", data=excel_data_sil, file_name=excel_filename, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_sil")
+                                st.markdown("---"); st.markdown(f"##### Diagnostica Dati Calcolati"); debug_task_count = st.session_state.get('debug_task_count', 0); st.write(f"**N. attività usate:** {debug_task_count}"); debug_total = st.session_state.get('debug_total_cost', 0); formatted_debug_cost = f"€ {debug_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."); st.write(f"**Costo Totale Calcolato:** {formatted_debug_cost}"); project_total = st.session_state.get('project_total_cost_from_summary', 'N/D'); st.caption(f"Costo Totale Ufficiale: {project_total}"); st.caption("I totali dovrebbero corrispondere.")
+                            else: st.warning(f"Nessun dato di costo trovato nel periodo selezionato.")
+                except Exception as analysis_error: st.error(f"Errore Analisi Avanzata: {analysis_error}"); st.error(traceback.format_exc())
+
+        # --- [NUOVO v19.0] Placeholder per Istogrammi (spostato qui) ---
+        st.markdown("---")
+        st.markdown("###### Istogrammi Risorse (Totale Lavoro)")
+
+        # --- [NUOVO v19.0] Bottone Analisi Istogrammi ---
+        if st.button("📊 Avvia Analisi Istogrammi", key="analyze_histograms"):
+            timephased_work_df = st.session_state.get('timephased_work_data')
+            resource_map = st.session_state.get('resource_map', {})
+
+            if timephased_work_df is None or timephased_work_df.empty:
+                st.error("Errore: Dati 'Timephased Work' non trovati nel file XML.")
+                st.warning("Assicurati che il progetto abbia risorse assegnate alle attività con del lavoro pianificato o effettivo.")
+            elif not resource_map:
+                st.error("Errore: Mappa Risorse non trovata.")
+            else:
+                try:
+                    with st.spinner("Calcolo distribuzione lavoro..."):
+                        # Filtra per periodo
                         selected_start_dt = datetime.combine(selected_start_date, datetime.min.time())
                         selected_finish_dt = datetime.combine(selected_finish_date, datetime.max.time())
+                        mask_work = (timephased_work_df['Date'] >= selected_start_dt) & (timephased_work_df['Date'] <= selected_finish_dt)
+                        filtered_work = timephased_work_df.loc[mask_work].copy() # Usa copy per evitare SettingWithCopyWarning
 
-                        mask_cost = (detailed_daily_cost_df['Date'] >= selected_start_dt) & (detailed_daily_cost_df['Date'] <= selected_finish_dt)
-                        filtered_cost = detailed_daily_cost_df.loc[mask_cost]
+                        if filtered_work.empty:
+                             st.warning(f"Nessun dato di lavoro trovato nel periodo selezionato.")
+                        else:
+                            # Converte minuti in ore
+                            filtered_work['WorkHours'] = filtered_work['WorkMinutes'] / 60.0
 
-                        if not filtered_cost.empty:
+                            # Aggrega il lavoro TOTALE per giorno
+                            aggregated_daily_work = filtered_work.groupby('Date')['WorkHours'].sum().reset_index()
 
-                            aggregated_data = pd.DataFrame()
-                            display_columns = []
-                            plot_custom_data = None
-                            col_summary_name = "Riepilogo WBS"
-                            date_format_display = ""
-                            date_format_excel = ""
-                            excel_filename = "" # <<<<<<<<<<<<< NUOVO: Nome file Excel
+                            # Prepara dati per tabella/grafico (Mensile o Giornaliera)
+                            aggregated_data_hist = pd.DataFrame()
+                            date_format_display_hist = ""
+                            date_format_excel_hist = ""
+                            axis_title_hist = ""
+                            col_name_hist = ""
+                            excel_filename_hist = ""
 
                             if aggregation_level == 'Mensile':
-                                aggregated_values = filtered_cost.set_index('Date')['Value'].resample('ME').sum().reset_index()
-                                aggregated_data = aggregated_values
-                                date_format_display = '%b-%y'; date_format_excel = '%b-%y'
-                                aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime(date_format_display).str.capitalize()
-                                axis_title = "Mese"; col_name = "Costo Mensile (€)"
-                                display_columns = ['Periodo', col_name, 'Costo Cumulato (€)']
-                                excel_filename = "Dati_SIL_Mensili.xlsx" # <<<<<<<<<<<<< Nome file aggiornato
-                            else: # 'Giornaliera'
-                                aggregated_daily = filtered_cost.groupby('Date').agg(
-                                    Value=('Value', 'sum'),
-                                    WBS_List=('WBS', lambda x: list(set(x)))
-                                ).reset_index()
-                                aggregated_daily[col_summary_name] = aggregated_daily['WBS_List'].apply(
-                                    lambda wbs_list: get_relevant_summary_name(wbs_list, wbs_name_map)
-                                )
-                                aggregated_data = aggregated_daily
-                                date_format_display = '%d/%m/%Y'; date_format_excel = '%d/%m/%Y'
-                                aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime(date_format_display)
-                                axis_title = "Giorno"; col_name = "Costo Giornaliero (€)"
-                                display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', col_summary_name]
-                                plot_custom_data = aggregated_data[col_summary_name]
-                                excel_filename = "Dati_SIL_Giornalieri.xlsx" # <<<<<<<<<<<<< Nome file aggiornato
+                                aggregated_monthly = aggregated_daily_work.set_index('Date')['WorkHours'].resample('ME').sum().reset_index()
+                                aggregated_data_hist = aggregated_monthly
+                                date_format_display_hist = '%b-%y'; date_format_excel_hist = '%b-%y'
+                                aggregated_data_hist['Periodo'] = aggregated_data_hist['Date'].dt.strftime(date_format_display_hist).str.capitalize()
+                                axis_title_hist = "Mese"; col_name_hist = "Ore Mensili"
+                                excel_filename_hist = "Istogramma_Lavoro_Mensile.xlsx"
+                            else: # Giornaliera
+                                aggregated_data_hist = aggregated_daily_work.copy() # Già aggregato giornalmente
+                                date_format_display_hist = '%d/%m/%Y'; date_format_excel_hist = '%d/%m/%Y'
+                                aggregated_data_hist['Periodo'] = aggregated_data_hist['Date'].dt.strftime(date_format_display_hist)
+                                axis_title_hist = "Giorno"; col_name_hist = "Ore Giornaliere"
+                                excel_filename_hist = "Istogramma_Lavoro_Giornaliero.xlsx"
 
-                            aggregated_data['Costo Cumulato (€)'] = aggregated_data['Value'].cumsum()
+                            aggregated_data_hist['Ore Cumulate'] = aggregated_data_hist['WorkHours'].cumsum()
 
-                            # --- VISUALIZZAZIONE ---
-                            st.markdown(f"###### Tabella Dati SIL Aggregati ({aggregation_level})")
-                            df_display_sil = aggregated_data.copy()
-                            df_display_sil.rename(columns={'Value': col_name}, inplace=True)
-                            df_display_sil[col_name] = df_display_sil[col_name].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                            df_display_sil['Costo Cumulato (€)'] = df_display_sil['Costo Cumulato (€)'].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                            st.dataframe(df_display_sil[display_columns], use_container_width=True, hide_index=True)
+                            # --- VISUALIZZAZIONE ISTOGRAMMI ---
+                            st.markdown(f"###### Tabella Lavoro Aggregato ({aggregation_level})")
+                            df_display_hist = aggregated_data_hist.copy()
+                            df_display_hist.rename(columns={'WorkHours': col_name_hist}, inplace=True)
+                            # Formatta ore con 2 decimali
+                            df_display_hist[col_name_hist] = df_display_hist[col_name_hist].apply(lambda x: f"{x:,.2f} ore")
+                            df_display_hist['Ore Cumulate'] = df_display_hist['Ore Cumulate'].apply(lambda x: f"{x:,.2f} ore")
+                            st.dataframe(df_display_hist[['Periodo', col_name_hist, 'Ore Cumulate']], use_container_width=True, hide_index=True)
 
-                            st.markdown(f"###### Grafico Curva S ({aggregation_level})")
-                            fig_sil = go.Figure()
-
-                            hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {aggregation_level}</b>: %{{y:,.2f}}€<extra></extra>'
-                            hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<extra></extra>'
-                            if aggregation_level == 'Giornaliera':
-                                hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {col_name}</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>'
-                                hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>'
-
-                            # --- [MODIFICATO v17.15] Colori Grafico ---
-                            fig_sil.add_trace(go.Bar(
-                                x=aggregated_data['Periodo'],
-                                y=aggregated_data['Value'],
-                                name=f'Costo {aggregation_level}',
-                                customdata=plot_custom_data,
-                                hovertemplate=hovertemplate_bar,
-                                marker_color='royalblue' # <<< Blu
+                            st.markdown(f"###### Grafico Istogramma Lavoro ({aggregation_level})")
+                            fig_hist = go.Figure()
+                            # Colori diversi per Istogramma (es. verde/arancio)
+                            fig_hist.add_trace(go.Bar(
+                                x=aggregated_data_hist['Periodo'],
+                                y=aggregated_data_hist['WorkHours'],
+                                name=f'Ore {aggregation_level}',
+                                marker_color='mediumseagreen' # Verde
                             ))
-                            fig_sil.add_trace(go.Scatter(
-                                x=aggregated_data['Periodo'],
-                                y=aggregated_data['Costo Cumulato (€)'],
-                                name=f'Costo Cumulato',
+                            fig_hist.add_trace(go.Scatter(
+                                x=aggregated_data_hist['Periodo'],
+                                y=aggregated_data_hist['Ore Cumulate'],
+                                name=f'Ore Cumulate',
                                 mode='lines+markers',
                                 yaxis='y2',
-                                customdata=plot_custom_data,
-                                hovertemplate=hovertemplate_scatter,
-                                line_color='crimson', # <<< Rosso
-                                marker_color='crimson' # <<< Rosso
+                                line_color='darkorange', # Arancio
+                                marker_color='darkorange'
                             ))
-                            fig_sil.update_layout(
-                                title=f'Curva S - Costo {aggregation_level.replace("a", "o")} e Cumulato',
-                                xaxis_title=axis_title,
-                                yaxis=dict(title=f"Costo {aggregation_level.replace('a', 'o')} (€)"),
-                                yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"),
+                            fig_hist.update_layout(
+                                title=f'Istogramma Lavoro - Ore {aggregation_level.replace("a","e")} e Cumulate',
+                                xaxis_title=axis_title_hist,
+                                yaxis=dict(title=f"Ore {aggregation_level.replace('a','e')}"),
+                                yaxis2=dict(title="Ore Cumulate", overlaying="y", side="right"),
                                 legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
                                 hovermode="x unified",
-                                template="plotly" # <<< Tentativo per export colori
+                                template="plotly"
                             )
-                            # --- FINE MODIFICA ---
+                            st.plotly_chart(fig_hist, use_container_width=True)
 
-                            st.plotly_chart(fig_sil, use_container_width=True)
+                            # --- EXPORT EXCEL ISTOGRAMMI ---
+                            output_hist = BytesIO()
+                            df_export_hist = aggregated_data_hist.copy()
+                            rename_map_excel_hist = {'Date': axis_title_hist, 'WorkHours': col_name_hist.replace('(€)', '(ore)'), 'Ore Cumulate': 'Ore Cumulate'}
+                            df_export_hist['Date'] = df_export_hist['Date'].dt.strftime(date_format_excel_hist).str.capitalize() if aggregation_level=='Mensile' else df_export_hist['Date'].dt.strftime(date_format_excel_hist)
 
-                            # --- EXPORT EXCEL ---
-                            output_sil = BytesIO()
-                            df_export = aggregated_data.copy()
-                            cols_to_select_excel = []
-                            rename_map_excel = {}
-                            excel_sheet_name = 'Tabella'
-                            if aggregation_level == 'Mensile':
-                                cols_to_select_excel = ['Date', 'Value', 'Costo Cumulato (€)']
-                                rename_map_excel = {'Date': 'Mese', 'Value': 'Costo Mensile (€)'}
-                                df_export['Date'] = df_export['Date'].dt.strftime(date_format_excel).str.capitalize()
-                            else: # Giornaliera
-                                cols_to_select_excel = ['Date', 'Value', 'Costo Cumulato (€)', col_summary_name]
-                                rename_map_excel = {'Date': 'Giorno', 'Value': 'Costo Giornaliero (€)', col_summary_name: 'Riepilogo WBS'}
-                                df_export['Date'] = df_export['Date'].dt.strftime(date_format_excel)
-                            df_to_write = df_export[cols_to_select_excel]
-                            df_to_write = df_to_write.rename(columns=rename_map_excel)
-                            with pd.ExcelWriter(output_sil, engine='openpyxl') as writer:
-                                df_to_write.to_excel(writer, index=False, sheet_name=excel_sheet_name)
-                                worksheet_table = writer.sheets[excel_sheet_name]
-                                for idx, col in enumerate(df_to_write):
+                            df_to_write_hist = df_export_hist[['Date', 'WorkHours', 'Ore Cumulate']] # Seleziona colonne corrette
+                            df_to_write_hist = df_to_write_hist.rename(columns=rename_map_excel_hist)
+
+                            with pd.ExcelWriter(output_hist, engine='openpyxl') as writer:
+                                df_to_write_hist.to_excel(writer, index=False, sheet_name='Tabella')
+                                worksheet_table_hist = writer.sheets['Tabella']
+                                for idx, col in enumerate(df_to_write_hist):
                                     try:
-                                        series = df_to_write[col]
+                                        series = df_to_write_hist[col]
                                         max_len = max((series.astype(str).map(len).max(), len(str(series.name)))) + 3
-                                        worksheet_table.column_dimensions[openpyxl.utils.get_column_letter(idx + 1)].width = max_len
-                                    except Exception as col_width_err: print(f"Errore aggiustamento colonna {col}: {col_width_err}")
+                                        worksheet_table_hist.column_dimensions[openpyxl.utils.get_column_letter(idx + 1)].width = max_len
+                                    except Exception as col_width_err: print(f"Errore agg colonna hist {col}: {col_width_err}")
                                 if _kaleido_installed:
                                     try:
-                                        img_bytes = pio.to_image(fig_sil, format="png", width=900, height=500, scale=1.5)
-                                        img = Image(BytesIO(img_bytes))
-                                        worksheet_chart = writer.book.create_sheet(title='Grafico')
-                                        worksheet_chart.add_image(img, 'A1')
-                                    except Exception as img_err: st.warning(f"Impossibile esportare il grafico in Excel (errore Kaleido/Plotly): {img_err}")
-                                else: st.warning("Pacchetto 'kaleido' non trovato. Impossibile esportare il grafico in Excel. Aggiungilo a requirements.txt e reinstalla.")
-                            excel_data_sil = output_sil.getvalue()
+                                        img_bytes_hist = pio.to_image(fig_hist, format="png", width=900, height=500, scale=1.5)
+                                        img_hist = Image(BytesIO(img_bytes_hist))
+                                        worksheet_chart_hist = writer.book.create_sheet(title='Grafico')
+                                        worksheet_chart_hist.add_image(img_hist, 'A1')
+                                    except Exception as img_err_hist: st.warning(f"Impossibile esportare grafico istogramma: {img_err_hist}")
+                                else: st.warning("Kaleido mancante per export grafico istogramma.")
 
-                            # --- [MODIFICATO v17.15] Nome file Excel ---
-                            st.download_button(label=f"Scarica Dati SIL ({aggregation_level})",
-                                               data=excel_data_sil,
-                                               file_name=excel_filename, # Usa il nome file definito prima
-                                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                               key="download_sil")
-                            # --- FINE MODIFICA ---
+                            excel_data_hist = output_hist.getvalue()
+                            st.download_button(label=f"Scarica Istogramma ({aggregation_level})", data=excel_data_hist, file_name=excel_filename_hist, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_hist")
 
 
-                            # --- DEBUG ---
-                            # ... (Debug invariato) ...
-                            st.markdown("---")
-                            st.markdown(f"##### Diagnostica Dati Calcolati")
-                            debug_task_count = st.session_state.get('debug_task_count', 0)
-                            st.write(f"**Numero attività usate per la distribuzione (filtro WBS Bottom-Up):** {debug_task_count}")
-                            debug_total = st.session_state.get('debug_total_cost', 0)
-                            formatted_debug_cost = f"€ {debug_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                            st.write(f"**Costo Totale Calcolato (somma attività filtrate):** {formatted_debug_cost}")
-                            project_total = st.session_state.get('project_total_cost_from_summary', 'N/D')
-                            st.caption(f"Costo Totale Ufficiale (da Riepilogo Progetto): {project_total}")
-                            st.caption("I due totali dovrebbero ora corrispondere se la logica bottom-up è corretta.")
-
-                        else:
-                            st.warning(f"Nessun dato di costo trovato nel periodo selezionato.")
-
-                except Exception as analysis_error:
-                    st.error(f"Errore durante l'analisi avanzata: {analysis_error}")
+                except Exception as analysis_error_hist:
+                    st.error(f"Errore durante l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
-
-        # --- Placeholder per Istogrammi (Invariato) ---
-        # ... (Codice invariato) ...
-        st.markdown("---")
-        st.markdown("###### Istogrammi Risorse")
-        st.info("Logica istogrammi da implementare (richiederà dati 'Lavoro' e 'Risorse').")
 
 
         # --- Debug Section (Invariata) ---
