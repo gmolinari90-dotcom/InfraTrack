@@ -1,4 +1,4 @@
-# --- v19.15 (Correzione Errore Indentazione Debug, Formato Mesi ITA) ---
+# --- v19.16 (Correzione Indentazione Debug Raggruppato) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -20,7 +20,7 @@ except ImportError:
 import openpyxl.utils
 import plotly.express as px
 
-# --- [NUOVO v19.15] Mappa Mesi Italiani ---
+# --- [NUOVO v19.13] Mappa Mesi Italiani ---
 italian_month_map = {
     1: 'Gen', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'Mag', 6: 'Giu',
     7: 'Lug', 8: 'Ago', 9: 'Set', 10: 'Ott', 11: 'Nov', 12: 'Dic'
@@ -28,7 +28,7 @@ italian_month_map = {
 # --- Rimosso blocco locale.setlocale ---
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v19.15", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v19.16", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 # ... (CSS invariato v17.12) ...
@@ -59,7 +59,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v19.15") # Version updated
+st.markdown("## 🚆 InfraTrack v19.16") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -354,7 +354,6 @@ if current_file_to_process is not None:
     if st.session_state.get('file_processed_success', False):
 
         # --- Sezione 2 (Invariata) ---
-        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 2. Analisi Preliminare"); st.markdown("##### 📄 Informazioni Generali dell'Appalto")
         project_name = st.session_state.get('project_name', "N/D"); formatted_cost = st.session_state.get('formatted_cost', "N/D")
         col1_disp, col2_disp = st.columns(2);
@@ -369,9 +368,7 @@ if current_file_to_process is not None:
             excel_data = output.getvalue(); st.download_button(label="Scarica TUP/TUF (Excel)", data=excel_data, file_name="termini_utili_TUP_TUF.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_tup")
         else: st.warning("Nessun Termine Utile (TUP o TUF) trovato nel file.")
 
-
         # --- Sezione 3: Selezione Periodo e Analisi ---
-        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
         if not default_start: default_start = date.today()
@@ -387,13 +384,11 @@ if current_file_to_process is not None:
         st.markdown("##### 📦 Seleziona Aggregazione Dati")
         aggregation_level = st.radio("Scegli il livello di dettaglio per l'analisi:", ('Mensile', 'Giornaliera'), key="aggregation_selector", horizontal=True, help="Scegli 'Giornaliera' per visualizzare i dettagli giornalieri.")
 
-
         # --- Analisi Dettagliate ---
         st.markdown("---"); st.markdown("##### 📊 Analisi Dettagliate")
 
         # --- Analisi Curva S (Codice invariato da v18.3) ---
         if st.button("📈 Avvia Analisi Curva S", key="analyze_scurve"):
-            # ... (Codice Analisi SIL invariato) ...
             all_tasks_dataframe = st.session_state.get('all_tasks_data'); wbs_name_map = st.session_state.get('wbs_name_map', {})
             if all_tasks_dataframe is None or all_tasks_dataframe.empty: st.error("Errore: Dati attività non trovati.")
             elif not wbs_name_map: st.error("Errore: Mappa WBS->Nome non trovata.")
@@ -427,7 +422,7 @@ if current_file_to_process is not None:
                             if not filtered_cost.empty:
                                 aggregated_data = pd.DataFrame(); display_columns = []; plot_custom_data = None; col_summary_name = "Riepilogo WBS"; date_format_display = ""; date_format_excel = ""; excel_filename = ""
                                 
-                                # --- [MODIFICATO v19.13] Formato Mese ITA ---
+                                # --- [MODIFICATO v19.15] Formato Mese ITA ---
                                 if aggregation_level == 'Mensile':
                                     aggregated_values = filtered_cost.set_index('Date')['Value'].resample('ME').sum().reset_index()
                                     aggregated_values = aggregated_values.sort_values(by='Date') # <<< Ordina
@@ -450,12 +445,16 @@ if current_file_to_process is not None:
                                 st.markdown(f"###### Grafico Curva S ({aggregation_level})"); fig_sil = go.Figure()
                                 hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {aggregation_level}</b>: %{{y:,.2f}}€<extra></extra>'; hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<extra></extra>'
                                 if aggregation_level == 'Giornaliera': hovertemplate_bar = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo {col_name}</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>'; hovertemplate_scatter = f'<b>{axis_title}</b>: %{{x}}<br><b>Costo Cumulato</b>: %{{y:,.2f}}€<br><b>{col_summary_name}</b>: %{{customdata}}<extra></extra>'
+                                
+                                # --- [MODIFICATO v19.15] Colori SIL ---
                                 fig_sil.add_trace(go.Bar(x=aggregated_data['Periodo'], y=aggregated_data['Value'], name=f'Costo {aggregation_level}', customdata=plot_custom_data, hovertemplate=hovertemplate_bar, marker_color='royalblue'))
                                 fig_sil.add_trace(go.Scatter(x=aggregated_data['Periodo'], y=aggregated_data['Costo Cumulato (€)'], name=f'Costo Cumulato', mode='lines+markers', yaxis='y2', customdata=plot_custom_data, hovertemplate=hovertemplate_scatter, line_color='crimson', marker_color='crimson'))
                                 fig_sil.update_layout(title=f'Curva S - Costo {aggregation_level.replace("a", "o")} e Cumulato', xaxis_title=axis_title, yaxis=dict(title=f"Costo {aggregation_level.replace('a', 'o')} (€)"), yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"), legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01), hovermode="x unified", template="plotly")
+                                # --- FINE MODIFICA ---
+                                
                                 st.plotly_chart(fig_sil, use_container_width=True)
                                 
-                                # --- Export Excel SIL (Modificato v19.13) ---
+                                # --- [MODIFICATO v19.15] Export Excel SIL con 'Periodo' e Nomi Corretti ---
                                 output_sil = BytesIO(); df_export = aggregated_data.copy(); cols_to_select_excel = []; rename_map_excel = {}; excel_sheet_name = 'Tabella'
                                 if aggregation_level == 'Mensile':
                                     cols_to_select_excel = ['Periodo', 'Value', 'Costo Cumulato (€)']
@@ -481,12 +480,11 @@ if current_file_to_process is not None:
                             else: st.warning(f"Nessun dato di costo trovato nel periodo selezionato.")
                 except Exception as analysis_error: st.error(f"Errore Analisi Avanzata: {analysis_error}"); st.error(traceback.format_exc())
 
-        # --- [MODIFICATO v19.13] Sezione Istogrammi Risorse ---
+        # --- [MODIFICATO v19.15] Sezione Istogrammi Risorse ---
         st.markdown("---")
         st.markdown("###### 📊 Istogrammi Risorse (Unità Medie Giornaliere eq. 8h)")
 
-        # --- Opzione "Tutte" rimossa ---
-        resource_type_options = ['Manodopera', 'Mezzi', 'Altro']
+        resource_type_options = ['Manodopera', 'Mezzi', 'Altro'] # "Tutte" rimosso
         selected_resource_type = st.selectbox(
             "Seleziona il tipo di risorsa da analizzare:",
             resource_type_options,
@@ -588,7 +586,6 @@ if current_file_to_process is not None:
                                 output_hist = BytesIO()
                                 df_export_hist = aggregated_hist.copy()
                                 rename_map_excel_hist = {'Periodo': axis_title_hist, 'AvgDailyUnits_Rounded': col_name_hist, 'ResourceName': 'Risorsa'}
-                                # df_export_hist['Date'] = df_export_hist['Date'].dt.strftime(date_format_excel_hist).str.capitalize() if aggregation_level=='Mensile' else df_export_hist['Date'].dt.strftime(date_format_excel_hist)
                                 df_to_write_hist = df_export_hist[['Periodo', 'ResourceName', 'AvgDailyUnits_Rounded']]
                                 df_to_write_hist = df_to_write_hist.rename(columns=rename_map_excel_hist)
 
@@ -646,7 +643,6 @@ if current_file_to_process is not None:
                                 output_hist = BytesIO()
                                 df_export_hist = aggregated_hist.copy()
                                 rename_map_excel_hist = {'Periodo': axis_title_hist, 'AvgDailyUnits_Rounded': col_name_hist}
-                                #df_export_hist['Date'] = df_export_hist['Date'].dt.strftime(date_format_excel_hist).str.capitalize() if aggregation_level=='Mensile' else df_export_hist['Date'].dt.strftime(date_format_excel_hist)
                                 df_to_write_hist = df_export_hist[['Periodo', 'AvgDailyUnits_Rounded']] # Usa Periodo già formattato
                                 df_to_write_hist = df_to_write_hist.rename(columns=rename_map_excel_hist)
 
@@ -695,7 +691,7 @@ if current_file_to_process is not None:
                     st.error(f"Errore during l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
 
-        # --- [MODIFICATO v19.13] Debug Raggruppato ---
+        # --- [MODIFICATO v19.14] Debug Raggruppato e Indentato ---
         st.markdown("---")
         with st.expander("🔍 Area Debug (Avanzato)", collapsed=True):
             st.markdown("##### Debug: Classificazione Risorse")
