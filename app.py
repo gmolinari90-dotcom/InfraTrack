@@ -1,4 +1,4 @@
-# --- v20.1 (Base v19.12 + Percorso Critico + Correzione Indentazione Debug) ---
+# --- v20.1 (Base v19.12 + Percorso Critico + Debug Raggruppato) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -360,7 +360,6 @@ if current_file_to_process is not None:
     if st.session_state.get('file_processed_success', False):
 
         # --- Sezione 2 (Invariata) ---
-        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 2. Analisi Preliminare"); st.markdown("##### 📄 Informazioni Generali dell'Appalto")
         project_name = st.session_state.get('project_name', "N/D"); formatted_cost = st.session_state.get('formatted_cost', "N/D")
         col1_disp, col2_disp = st.columns(2);
@@ -377,7 +376,6 @@ if current_file_to_process is not None:
 
 
         # --- Sezione 3: Selezione Periodo e Analisi ---
-        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
         if not default_start: default_start = date.today()
@@ -438,6 +436,7 @@ if current_file_to_process is not None:
                                     aggregated_values = aggregated_values.sort_values(by='Date') # <<< Ordina
                                     aggregated_data = aggregated_values
                                     date_format_display = '%b-%y'; date_format_excel = '%b-%y'
+                                    # Usa la mappa per i nomi dei mesi
                                     aggregated_data['Month_Num'] = aggregated_data['Date'].dt.month
                                     aggregated_data['Year_Num'] = aggregated_data['Date'].dt.strftime('%y')
                                     aggregated_data['Periodo'] = aggregated_data['Month_Num'].map(italian_month_map) + '-' + aggregated_data['Year_Num']
@@ -561,7 +560,7 @@ if current_file_to_process is not None:
                                 
                                 try:
                                     pivot_table = pd.pivot_table(df_display_hist, values=col_name_hist, index=['Date', 'Periodo'], columns='ResourceName', aggfunc='first', fill_value=0)
-                                    pivot_table = pivot_table.reset_index(level=0, drop=True) # Rimuovi 'Date' per display
+                                    pivot_table = pivot_table.reset_index(level=0, drop=True)
                                     st.dataframe(pivot_table, use_container_width=True)
                                 except Exception as e_pivot:
                                     st.warning(f"Impossibile creare tabella pivot ({e_pivot}). Mostro tabella standard.")
@@ -596,7 +595,6 @@ if current_file_to_process is not None:
                                 output_hist = BytesIO()
                                 df_export_hist = aggregated_hist.copy()
                                 rename_map_excel_hist = {'Periodo': axis_title_hist, 'AvgDailyUnits_Rounded': col_name_hist, 'ResourceName': 'Risorsa'}
-                                #df_export_hist['Date'] = df_export_hist['Date'].dt.strftime(date_format_excel_hist).str.capitalize() if aggregation_level=='Mensile' else df_export_hist['Date'].dt.strftime(date_format_excel_hist)
                                 df_to_write_hist = df_export_hist[['Periodo', 'ResourceName', 'AvgDailyUnits_Rounded']]
                                 df_to_write_hist = df_to_write_hist.rename(columns=rename_map_excel_hist)
 
@@ -654,7 +652,7 @@ if current_file_to_process is not None:
                                 output_hist = BytesIO()
                                 df_export_hist = aggregated_hist.copy()
                                 rename_map_excel_hist = {'Periodo': axis_title_hist, 'AvgDailyUnits_Rounded': col_name_hist}
-                                df_to_write_hist = df_export_hist[['Periodo', 'AvgDailyUnits_Rounded']] # Usa Periodo già formattato
+                                df_to_write_hist = df_export_hist[['Periodo', 'AvgDailyUnits_Rounded']]
                                 df_to_write_hist = df_to_write_hist.rename(columns=rename_map_excel_hist)
 
                             # --- Export Excel (Comune) ---
@@ -702,7 +700,7 @@ if current_file_to_process is not None:
                     st.error(f"Errore durante l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
 
-        # --- [NUOVO v20.0] Sezione Analisi Percorso Critico ---
+        # --- [NUOVO v20.1] Sezione Analisi Percorso Critico ---
         st.markdown("---")
         st.markdown("###### ⛓️ Analisi Percorso Critico")
         
@@ -778,7 +776,8 @@ if current_file_to_process is not None:
                     st.error(traceback.format_exc())
         # --- FINE NUOVA SEZIONE ---
 
-        # --- [MODIFICATO v19.14] Debug Raggruppato e Indentato ---
+
+        # --- [MODIFICATO v20.1] Debug Raggruppato e Indentato Correttamente ---
         st.markdown("---")
         with st.expander("🔍 Area Debug (Avanzato)", collapsed=True):
             st.markdown("##### Debug: Classificazione Risorse")
