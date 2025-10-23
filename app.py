@@ -1,4 +1,4 @@
-# --- v20.3 (Base v19.12 + Correzione Indentazione Debug + Aggiunta Percorso Critico) ---
+# --- v20.4 (Correzione Bug Parsing TotalSlack, Correzione Indentazione Debug) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -21,6 +21,7 @@ import openpyxl.utils
 import plotly.express as px
 
 # --- Imposta Locale Italiano ---
+# ... (Codice invariato v17.13) ...
 _locale_warning_shown = False
 try: locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
 except locale.Error:
@@ -33,9 +34,10 @@ except locale.Error:
                 _locale_warning_shown = True
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v20.3", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v20.4", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
+# ... (CSS invariato v17.12) ...
 st.markdown("""
 <style>
      .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button { font-size: 0.85rem !important; }
@@ -63,7 +65,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v20.3") # Version updated
+st.markdown("## 🚆 InfraTrack v20.4") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -284,7 +286,7 @@ if current_file_to_process is not None:
                     is_milestone_text = (task.findtext('msp:Milestone', namespaces=ns) or '0').lower(); is_milestone = is_milestone_text == '1' or is_milestone_text == 'true'
                     wbs = task.findtext('msp:WBS', namespaces=ns) or ""
                     
-                    # --- [CORREZIONE v20.3] Parsing TotalSlack ---
+                    # --- [CORREZIONE v20.4] Parsing TotalSlack ---
                     total_slack_minutes_str = task.findtext('msp:TotalSlack', namespaces=ns) or "0"
                     is_summary_str = task.findtext('msp:Summary', namespaces=ns) or '0'
                     is_summary = is_summary_str == '1'
@@ -693,7 +695,7 @@ if current_file_to_process is not None:
 
 
                 except Exception as analysis_error_hist:
-                    st.error(f"Errore durante l'analisi degli istogrammi: {analysis_error_hist}")
+                    st.error(f"Errore during l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
         
         # --- [NUOVO v20.3] Sezione Analisi Percorso Critico ---
