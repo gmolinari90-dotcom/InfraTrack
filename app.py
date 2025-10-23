@@ -1,4 +1,4 @@
-# --- v20.2 (Base v19.12 + Aggiunta Analisi Percorso Critico) ---
+# --- v20.3 (Correzione KeyError Start_Date Percorso Critico) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -21,7 +21,6 @@ import openpyxl.utils
 import plotly.express as px
 
 # --- Imposta Locale Italiano ---
-# ... (Codice invariato v17.13) ...
 _locale_warning_shown = False
 try: locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
 except locale.Error:
@@ -34,7 +33,7 @@ except locale.Error:
                 _locale_warning_shown = True
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v20.2", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v20.3", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 # ... (CSS invariato v17.12) ...
@@ -65,7 +64,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v20.2") # Version updated
+st.markdown("## 🚆 InfraTrack v20.3") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -360,7 +359,6 @@ if current_file_to_process is not None:
     if st.session_state.get('file_processed_success', False):
 
         # --- Sezione 2 (Invariata) ---
-        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 2. Analisi Preliminare"); st.markdown("##### 📄 Informazioni Generali dell'Appalto")
         project_name = st.session_state.get('project_name', "N/D"); formatted_cost = st.session_state.get('formatted_cost', "N/D")
         col1_disp, col2_disp = st.columns(2);
@@ -377,7 +375,6 @@ if current_file_to_process is not None:
 
 
         # --- Sezione 3: Selezione Periodo e Analisi ---
-        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
         if not default_start: default_start = date.today()
@@ -684,7 +681,7 @@ if current_file_to_process is not None:
                     st.error(f"Errore durante l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
         
-        # --- [NUOVO v20.1] Sezione Analisi Percorso Critico ---
+        # --- [NUOVO v20.2] Sezione Analisi Percorso Critico ---
         st.markdown("---")
         st.markdown("###### ⛓️ Analisi Percorso Critico")
         
@@ -731,17 +728,29 @@ if current_file_to_process is not None:
                         st.markdown(f"###### Attività Critiche e Quasi-Critiche nel Periodo (Flessibilità <= {slack_threshold} giorni)")
                         
                         df_display_crit = critical_tasks_in_period.copy()
-                        df_display_crit['Start_Date'] = pd.to_datetime(df_display_crit['Start']) # Mantieni data per sort
+                        
+                        # --- [CORREZIONE v20.3] Crea colonna per sort, POI ordina, POI formatta ---
+                        # 1. Crea colonna per sort
+                        df_display_crit['Start_Date_Sort'] = pd.to_datetime(df_display_crit['Start']) 
+                        
+                        # 2. Ordina il DataFrame *prima*
+                        df_display_crit = df_display_crit.sort_values(by='Start_Date_Sort')
+                        # --- FINE CORREZIONE ---
+
+                        # Ora formatta le date per la visualizzazione
                         df_display_crit['Start'] = df_display_crit['Start'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
                         df_display_crit['Finish'] = df_display_crit['Finish'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
                         
-                        # --- [MODIFICATO v20.2] Ordine colonne come richiesto ---
+                        # 3. Colonne da mostrare (ordinate come da richiesta)
                         cols_to_show = ['WBS', 'Name', 'Duration', 'Start', 'Finish', 'TotalSlackDays']
-                        st.dataframe(df_display_crit[cols_to_show].sort_values(by='Start_Date'), use_container_width=True, hide_index=True)
+                        
+                        # 4. Mostra il DataFrame già ordinato, selezionando solo le colonne da visualizzare
+                        st.dataframe(df_display_crit[cols_to_show], use_container_width=True, hide_index=True)
 
                         # Bottone Download
                         output_crit = BytesIO()
                         with pd.ExcelWriter(output_crit, engine='openpyxl') as writer:
+                            # Esporta il df ordinato con le colonne giuste
                             df_display_crit[cols_to_show].to_excel(writer, index=False, sheet_name='Attivita_Critiche')
                         excel_data_crit = output_crit.getvalue()
                         st.download_button(
@@ -757,7 +766,7 @@ if current_file_to_process is not None:
                     st.error(traceback.format_exc())
         # --- FINE NUOVA SEZIONE ---
 
-        # --- [MODIFICATO v20.2] Blocchi Debug SPOSTATI QUI (indentazione corretta) ---
+        # --- [MODIFICATO v20.2] Debug spostati qui (indentazione corretta) ---
         st.markdown("---")
         with st.expander("🔍 Debug: Classificazione Risorse"):
             df_res_class = st.session_state.get('resource_classification_debug')
