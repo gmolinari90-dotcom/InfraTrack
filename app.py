@@ -1,4 +1,4 @@
-# --- v20.3 (Base v19.12 + Correzione Indentazione Debug + Aggiunta Percorso Critico) ---
+# --- v20.3 (Correzione Bug Parsing TotalSlack, Correzione Indentazione Debug) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -283,21 +283,37 @@ if current_file_to_process is not None:
                     duration_formatted = format_duration_from_xml(duration_str)
                     is_milestone_text = (task.findtext('msp:Milestone', namespaces=ns) or '0').lower(); is_milestone = is_milestone_text == '1' or is_milestone_text == 'true'
                     wbs = task.findtext('msp:WBS', namespaces=ns) or ""
+                    
+                    # --- [CORREZIONE v20.3] Parsing TotalSlack ---
                     total_slack_minutes_str = task.findtext('msp:TotalSlack', namespaces=ns) or "0"
                     is_summary_str = task.findtext('msp:Summary', namespaces=ns) or '0'
                     is_summary = is_summary_str == '1'
                     total_slack_days = 0
                     if total_slack_minutes_str:
                         try:
-                            slack_minutes = float(total_slack_minutes_str)
+                            slack_minutes = 0
+                            if 'PT' in total_slack_minutes_str:
+                                # È un formato ISO Duration (es. PT8H0M0S)
+                                if not total_slack_minutes_str.startswith('P'):
+                                    total_slack_minutes_str = 'P' + total_slack_minutes_str
+                                duration_obj = isodate.parse_duration(total_slack_minutes_str)
+                                slack_minutes = duration_obj.total_seconds() / 60.0
+                            else:
+                                # È un numero (minuti)
+                                slack_minutes = float(total_slack_minutes_str)
+
                             mpd = st.session_state.get('minutes_per_day', 480)
-                            if mpd > 0: total_slack_days = math.ceil(slack_minutes / mpd)
-                        except ValueError: total_slack_days = 0
+                            if mpd > 0:
+                                total_slack_days = round(slack_minutes / mpd) # Arrotondamento standard
+                        except Exception: 
+                            total_slack_days = 0 # Default a 0 in caso di errore
+                    # --- FINE CORREZIONE ---
+
                     if wbs and name: wbs_name_map[wbs] = name
                     if uid != '0':
                         all_tasks_data_list.append({"UID": uid, "Name": name, "Start": start_date, "Finish": finish_date, "Duration": duration_formatted,
                                                     "Cost": cost_euros, "Milestone": is_milestone, "Summary": is_summary,
-                                                    "WBS": wbs, "TotalSlackDays": total_slack_days})
+                                                    "WBS": wbs, "TotalSlackDays": total_slack_days}) # Salva i giorni corretti
                     match = tup_tuf_pattern.search(name)
                     if match:
                         tup_tuf_key = match.group(0).upper().strip(); duration_str_tup = task.findtext('msp:Duration', namespaces=ns)
@@ -715,6 +731,7 @@ if current_file_to_process is not None:
                         tasks_df_crit = tasks_df_crit[tasks_df_crit['Summary'] == False]
                         
                         # Filtro 2: Flessibilità Totale
+                        # Usa la variabile 'slack_threshold' dall'input number
                         tasks_df_crit = tasks_df_crit[tasks_df_crit['TotalSlackDays'] <= slack_threshold]
                         
                         # Filtro 3: Sovrapposizione con periodo selezionato
@@ -737,8 +754,8 @@ if current_file_to_process is not None:
                         # --- FINE CORREZIONE ---
 
                         # Ora formatta le date per la visualizzazione
-                        df_display_crit['Start'] = df_display_crit['Start'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
-                        df_display_crit['Finish'] = df_display_crit['Finish'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
+                        df_display_crit['Start'] = df_display_hist['Start'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
+                        df_display_crit['Finish'] = df_display_hist['Finish'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
                         
                         # 3. Colonne da mostrare (ordinate come da richiesta)
                         cols_to_show = ['WBS', 'Name', 'Duration', 'Start', 'Finish', 'TotalSlackDays']
@@ -761,7 +778,7 @@ if current_file_to_process is not None:
                         )
                         
                 except Exception as analysis_error_crit:
-                    st.error(f"Errore during l'analisi del percorso critico: {analysis_error_crit}")
+                    st.error(f"Errore durante l'analisi del percorso critico: {analysis_error_crit}")
                     st.error(traceback.format_exc())
         # --- FINE NUOVA SEZIONE ---
 
