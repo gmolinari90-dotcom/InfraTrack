@@ -360,6 +360,7 @@ if current_file_to_process is not None:
     if st.session_state.get('file_processed_success', False):
 
         # --- Sezione 2 (Invariata) ---
+        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 2. Analisi Preliminare"); st.markdown("##### 📄 Informazioni Generali dell'Appalto")
         project_name = st.session_state.get('project_name', "N/D"); formatted_cost = st.session_state.get('formatted_cost', "N/D")
         col1_disp, col2_disp = st.columns(2);
@@ -376,6 +377,7 @@ if current_file_to_process is not None:
 
 
         # --- Sezione 3: Selezione Periodo e Analisi ---
+        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
         if not default_start: default_start = date.today()
@@ -397,6 +399,7 @@ if current_file_to_process is not None:
 
         # --- Analisi Curva S (Codice invariato da v18.3) ---
         if st.button("📈 Avvia Analisi Curva S", key="analyze_scurve"):
+            # ... (Codice Analisi SIL invariato) ...
             all_tasks_dataframe = st.session_state.get('all_tasks_data'); wbs_name_map = st.session_state.get('wbs_name_map', {})
             if all_tasks_dataframe is None or all_tasks_dataframe.empty: st.error("Errore: Dati attività non trovati.")
             elif not wbs_name_map: st.error("Errore: Mappa WBS->Nome non trovata.")
@@ -429,6 +432,8 @@ if current_file_to_process is not None:
                             filtered_cost = aggregated_daily_raw.loc[mask_cost]
                             if not filtered_cost.empty:
                                 aggregated_data = pd.DataFrame(); display_columns = []; plot_custom_data = None; col_summary_name = "Riepilogo WBS"; date_format_display = ""; date_format_excel = ""; excel_filename = ""
+                                
+                                # --- (Logica date v19.12, NON MODIFICATA) ---
                                 if aggregation_level == 'Mensile':
                                     aggregated_values = filtered_cost.set_index('Date')['Value'].resample('ME').sum().reset_index(); aggregated_data = aggregated_values
                                     date_format_display = '%b-%y'; date_format_excel = '%b-%y'; aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime(date_format_display).str.capitalize()
@@ -437,6 +442,8 @@ if current_file_to_process is not None:
                                     aggregated_daily = filtered_cost.copy(); aggregated_daily[col_summary_name] = aggregated_daily['WBS_List'].apply(lambda l: get_relevant_summary_name(l, wbs_name_map))
                                     aggregated_data = aggregated_daily; date_format_display = '%d/%m/%Y'; date_format_excel = '%d/%m/%Y'; aggregated_data['Periodo'] = aggregated_data['Date'].dt.strftime(date_format_display)
                                     axis_title = "Giorno"; col_name = "Costo Giornaliero (€)"; display_columns = ['Periodo', col_name, 'Costo Cumulato (€)', col_summary_name]; plot_custom_data = aggregated_data[col_summary_name]; excel_filename = "Dati_SIL_Giornalieri.xlsx"
+                                # --- FINE BLOCCO DATE ---
+
                                 aggregated_data['Costo Cumulato (€)'] = aggregated_data['Value'].cumsum()
                                 st.markdown(f"###### Tabella Dati SIL Aggregati ({aggregation_level})"); df_display_sil = aggregated_data.copy(); df_display_sil.rename(columns={'Value': col_name}, inplace=True)
                                 df_display_sil[col_name] = df_display_sil[col_name].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")); df_display_sil['Costo Cumulato (€)'] = df_display_sil['Costo Cumulato (€)'].apply(lambda x: f"€ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
@@ -448,10 +455,14 @@ if current_file_to_process is not None:
                                 fig_sil.add_trace(go.Scatter(x=aggregated_data['Periodo'], y=aggregated_data['Costo Cumulato (€)'], name=f'Costo Cumulato', mode='lines+markers', yaxis='y2', customdata=plot_custom_data, hovertemplate=hovertemplate_scatter, line_color='crimson', marker_color='crimson'))
                                 fig_sil.update_layout(title=f'Curva S - Costo {aggregation_level.replace("a", "o")} e Cumulato', xaxis_title=axis_title, yaxis=dict(title=f"Costo {aggregation_level.replace('a', 'o')} (€)"), yaxis2=dict(title="Costo Cumulato (€)", overlaying="y", side="right"), legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01), hovermode="x unified", template="plotly")
                                 st.plotly_chart(fig_sil, use_container_width=True)
+                                
+                                # --- Export Excel SIL (v19.12) ---
                                 output_sil = BytesIO(); df_export = aggregated_data.copy(); cols_to_select_excel = []; rename_map_excel = {}; excel_sheet_name = 'Tabella'
                                 if aggregation_level == 'Mensile': cols_to_select_excel = ['Date', 'Value', 'Costo Cumulato (€)']; rename_map_excel = {'Date': 'Mese', 'Value': 'Costo Mensile (€)'}; df_export['Date'] = df_export['Date'].dt.strftime(date_format_excel).str.capitalize()
                                 else: cols_to_select_excel = ['Date', 'Value', 'Costo Cumulato (€)', col_summary_name]; rename_map_excel = {'Date': 'Giorno', 'Value': 'Costo Giornaliero (€)', col_summary_name: 'Riepilogo WBS'}; df_export['Date'] = df_export['Date'].dt.strftime(date_format_excel)
                                 df_to_write = df_export[cols_to_select_excel]; df_to_write = df_to_write.rename(columns=rename_map_excel)
+                                # --- FINE BLOCCO ---
+                                
                                 with pd.ExcelWriter(output_sil, engine='openpyxl') as writer:
                                     df_to_write.to_excel(writer, index=False, sheet_name=excel_sheet_name); worksheet_table = writer.sheets[excel_sheet_name]
                                     for idx, col in enumerate(df_to_write):
@@ -467,11 +478,11 @@ if current_file_to_process is not None:
                             else: st.warning(f"Nessun dato di costo trovato nel periodo selezionato.")
                 except Exception as analysis_error: st.error(f"Errore Analisi Avanzata: {analysis_error}"); st.error(traceback.format_exc())
 
-        # --- [MODIFICATO v20.1] Sezione Istogrammi Risorse ---
+        # --- Istogrammi Risorse (Codice v19.12) ---
         st.markdown("---")
         st.markdown("###### 📊 Istogrammi Risorse (Unità Medie Giornaliere eq. 8h)")
 
-        resource_type_options = ['Manodopera', 'Mezzi', 'Altro']
+        resource_type_options = ['Manodopera', 'Mezzi', 'Altro'] # "Tutte" rimosso
         selected_resource_type = st.selectbox(
             "Seleziona il tipo di risorsa da analizzare:",
             resource_type_options,
@@ -512,7 +523,6 @@ if current_file_to_process is not None:
                             excel_filename_hist = f"Istogramma_UnitaMediaGiorn_{selected_resource_type.replace(' ', '_')}_{aggregation_level}.xlsx"
                             df_pivot_export = None
 
-                            # --- Logica differenziata ('Mezzi' e 'Altro' vs 'Manodopera') ---
                             if selected_resource_type in ['Mezzi', 'Altro']:
                                 aggregated_daily_detail = filtered_work.groupby(['Date', 'ResourceName'])['WorkHours'].sum().reset_index()
 
@@ -529,7 +539,6 @@ if current_file_to_process is not None:
                                 aggregated_hist['Periodo'] = aggregated_hist['Date'].dt.strftime(date_format_display_hist).str.capitalize()
                                 aggregated_hist['AvgDailyUnits_Rounded'] = aggregated_hist['AvgDailyUnits'].round().astype(int)
 
-                                # --- VISUALIZZAZIONE MEZZI / ALTRO ---
                                 st.markdown(f"###### Tabella Dettaglio Unità Medie Giorn. {selected_resource_type} ({aggregation_level})")
                                 df_display_hist = aggregated_hist.copy()
                                 df_display_hist.rename(columns={'AvgDailyUnits_Rounded': col_name_hist}, inplace=True)
@@ -567,7 +576,6 @@ if current_file_to_process is not None:
                                 )
                                 st.plotly_chart(fig_hist, use_container_width=True)
 
-                                # --- EXPORT EXCEL MEZZI / ALTRO ---
                                 output_hist = BytesIO()
                                 df_export_hist = aggregated_hist.copy()
                                 rename_map_excel_hist = {'Date': axis_title_hist, 'AvgDailyUnits_Rounded': col_name_hist, 'ResourceName': 'Risorsa'}
@@ -578,7 +586,7 @@ if current_file_to_process is not None:
                                 if aggregation_level == 'Mensile':
                                      try:
                                         df_pivot_export = pd.pivot_table(df_to_write_hist, values=col_name_hist, index=axis_title_hist, columns='Risorsa', fill_value=0)
-                                        df_pivot_export = df_pivot_export.reindex(df_export_hist['Date'].unique()) # Forza ordinamento
+                                        df_pivot_export = df_pivot_export.reindex(df_export_hist['Date'].unique())
                                      except Exception: df_pivot_export = None
 
                             else: # Manodopera
@@ -597,7 +605,6 @@ if current_file_to_process is not None:
                                 aggregated_hist['Periodo'] = aggregated_hist['Date'].dt.strftime(date_format_display_hist).str.capitalize()
                                 aggregated_hist['AvgDailyUnits_Rounded'] = aggregated_hist['AvgDailyUnits'].round().astype(int)
 
-                                # --- VISUALIZZAZIONE MANODOPERA ---
                                 st.markdown(f"###### Tabella Totale Unità Medie Giorn. {selected_resource_type} ({aggregation_level})")
                                 df_display_hist = aggregated_hist.copy()
                                 df_display_hist.rename(columns={'AvgDailyUnits_Rounded': col_name_hist}, inplace=True)
@@ -623,7 +630,6 @@ if current_file_to_process is not None:
                                 )
                                 st.plotly_chart(fig_hist, use_container_width=True)
 
-                                # --- EXPORT EXCEL MANODOPERA ---
                                 output_hist = BytesIO()
                                 df_export_hist = aggregated_hist.copy()
                                 rename_map_excel_hist = {'Date': axis_title_hist, 'AvgDailyUnits_Rounded': col_name_hist}
@@ -631,7 +637,6 @@ if current_file_to_process is not None:
                                 df_to_write_hist = df_export_hist[['Date', 'AvgDailyUnits_Rounded']]
                                 df_to_write_hist = df_to_write_hist.rename(columns=rename_map_excel_hist)
 
-                            # --- Export Excel (Comune) ---
                             with pd.ExcelWriter(output_hist, engine='openpyxl') as writer:
                                 if selected_resource_type in ['Mezzi', 'Altro'] and aggregation_level == 'Mensile' and df_pivot_export is not None:
                                     df_pivot_export.to_excel(writer, sheet_name='Tabella_Pivot')
@@ -673,19 +678,21 @@ if current_file_to_process is not None:
 
 
                 except Exception as analysis_error_hist:
-                    st.error(f"Errore during l'analisi degli istogrammi: {analysis_error_hist}")
+                    st.error(f"Errore durante l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
         
         # --- [NUOVO v20.1] Sezione Analisi Percorso Critico ---
         st.markdown("---")
         st.markdown("###### ⛓️ Analisi Percorso Critico")
         
+        # Spiegazione Total Slack (Flessibilità)
         st.caption("""
         Il **Margine di Flessibilità Totale** (Total Slack) indica di quanto tempo un'attività può ritardare senza influenzare la data di fine totale del progetto.
         Un'attività è considerata **critica** se ha un margine di flessibilità pari o inferiore a 0 giorni.
         Impostando un valore (es. 5 giorni), puoi identificare anche le attività **quasi-critiche**.
         """)
         
+        # Selettore per margine di flessibilità
         slack_threshold = st.number_input(
             "Mostra attività con Flessibilità Totale (giorni) minore o uguale a:",
             min_value=0, max_value=100, value=0, step=1,
@@ -703,21 +710,26 @@ if current_file_to_process is not None:
                     with st.spinner(f"Calcolo attività critiche (Flessibilità <= {slack_threshold} giorni)..."):
                         
                         tasks_df_crit = all_tasks_df.copy()
+                        # Assicura che le date siano nel formato corretto (potrebbero essere già date object)
                         tasks_df_crit['Start'] = pd.to_datetime(tasks_df_crit['Start'], errors='coerce').dt.date
                         tasks_df_crit['Finish'] = pd.to_datetime(tasks_df_crit['Finish'], errors='coerce').dt.date
                         
-                        # Filtro per attività (non riepiloghi) e Flessibilità
+                        # Filtro per attività (non riepiloghi) e non milestone
                         tasks_df_crit = tasks_df_crit[
-                            (tasks_df_crit['Summary'] == False) &
-                            (tasks_df_crit['TotalSlackDays'] <= slack_threshold)
+                            (tasks_df_crit['Summary'] == False) & 
+                            (tasks_df_crit['Milestone'] == False)
                         ]
                         
+                        # Filtro per Flessibilità Totale
+                        tasks_df_crit = tasks_df_crit[tasks_df_crit['TotalSlackDays'] <= slack_threshold]
+                        
                         # Filtro per sovrapposizione con periodo selezionato
+                        # (Start <= Fine_Periodo) AND (Finish >= Inizio_Periodo)
                         mask_overlap = (tasks_df_crit['Start'] <= selected_finish_date) & (tasks_df_crit['Finish'] >= selected_start_date)
                         critical_tasks_in_period = tasks_df_crit[mask_overlap]
 
                     if critical_tasks_in_period.empty:
-                        st.warning(f"Nessuna attività (non di riepilogo) trovata con Flessibilità Totale <= {slack_threshold} giorni nel periodo selezionato.")
+                        st.warning(f"Nessuna attività (non di riepilogo, non milestone) trovata con Flessibilità Totale <= {slack_threshold} giorni nel periodo selezionato.")
                     else:
                         st.markdown(f"###### Attività Critiche e Quasi-Critiche nel Periodo (Flessibilità <= {slack_threshold} giorni)")
                         
@@ -728,6 +740,7 @@ if current_file_to_process is not None:
                         cols_to_show = ['UID', 'Name', 'Start', 'Finish', 'Duration', 'WBS', 'TotalSlackDays']
                         st.dataframe(df_display_crit[cols_to_show].sort_values(by='Start'), use_container_width=True, hide_index=True)
 
+                        # Bottone Download per percorso critico
                         output_crit = BytesIO()
                         with pd.ExcelWriter(output_crit, engine='openpyxl') as writer:
                             df_display_crit[cols_to_show].to_excel(writer, index=False, sheet_name='Attivita_Critiche')
@@ -744,6 +757,7 @@ if current_file_to_process is not None:
                     st.error(f"Errore durante l'analisi del percorso critico: {analysis_error_crit}")
                     st.error(traceback.format_exc())
         # --- FINE NUOVA SEZIONE ---
+
 
         # --- [MODIFICATO v20.1] Debug Raggruppato e Indentato ---
         st.markdown("---")
