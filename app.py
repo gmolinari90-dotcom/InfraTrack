@@ -1,4 +1,4 @@
-# --- v20.3 (Correzione Bug NameError e Indentazione Debug) ---
+# --- v20.3 (Base v19.12 + Correzione Indentazione Debug + Aggiunta Percorso Critico) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -21,7 +21,6 @@ import openpyxl.utils
 import plotly.express as px
 
 # --- Imposta Locale Italiano ---
-# ... (Codice invariato v17.13) ...
 _locale_warning_shown = False
 try: locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
 except locale.Error:
@@ -37,7 +36,6 @@ except locale.Error:
 st.set_page_config(page_title="InfraTrack v20.3", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
-# ... (CSS invariato v17.12) ...
 st.markdown("""
 <style>
      .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button { font-size: 0.85rem !important; }
