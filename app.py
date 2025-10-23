@@ -1,4 +1,4 @@
-# --- v20.2 (Base v19.12 + Correzione Indentazione Debug + Aggiunta Percorso Critico) ---
+# --- v20.2 (Base v19.12 + Aggiunta Analisi Percorso Critico + Correzione Indentazione Debug) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -21,7 +21,6 @@ import openpyxl.utils
 import plotly.express as px
 
 # --- Imposta Locale Italiano ---
-# ... (Codice invariato v17.13) ...
 _locale_warning_shown = False
 try: locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
 except locale.Error:
@@ -37,7 +36,6 @@ except locale.Error:
 st.set_page_config(page_title="InfraTrack v20.2", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
-# ... (CSS invariato v17.12) ...
 st.markdown("""
 <style>
      .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button { font-size: 0.85rem !important; }
@@ -679,7 +677,7 @@ if current_file_to_process is not None:
 
 
                 except Exception as analysis_error_hist:
-                    st.error(f"Errore during l'analisi degli istogrammi: {analysis_error_hist}")
+                    st.error(f"Errore durante l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
         
         # --- [NUOVO v20.1] Sezione Analisi Percorso Critico ---
@@ -729,22 +727,17 @@ if current_file_to_process is not None:
                         st.markdown(f"###### Attività Critiche e Quasi-Critiche nel Periodo (Flessibilità <= {slack_threshold} giorni)")
                         
                         df_display_crit = critical_tasks_in_period.copy()
-                        df_display_crit['Start_dt'] = pd.to_datetime(df_display_crit['Start']) # Colonna per ordinamento
                         df_display_crit['Start'] = df_display_crit['Start'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
                         df_display_crit['Finish'] = df_display_crit['Finish'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
                         
-                        # --- [MODIFICATO v20.2] Ordine colonne Percorso Critico ---
-                        cols_to_show = ['Name', 'Duration', 'Start', 'Finish', 'WBS', 'TotalSlackDays']
-                        st.dataframe(df_display_crit.sort_values(by='Start_dt')[cols_to_show], use_container_width=True, hide_index=True)
+                        cols_to_show = ['UID', 'Name', 'Start', 'Finish', 'Duration', 'WBS', 'TotalSlackDays']
+                        st.dataframe(df_display_crit[cols_to_show].sort_values(by='Start'), use_container_width=True, hide_index=True)
 
                         # Bottone Download
                         output_crit = BytesIO()
                         with pd.ExcelWriter(output_crit, engine='openpyxl') as writer:
-                            # Esporta con le colonne nell'ordine richiesto
-                            df_display_crit.sort_values(by='Start_dt')[cols_to_show].to_excel(writer, index=False, sheet_name='Attivita_Critiche')
+                            df_display_crit[cols_to_show].to_excel(writer, index=False, sheet_name='Attivita_Critiche')
                         excel_data_crit = output_crit.getvalue()
-                        # --- FINE MODIFICA ---
-
                         st.download_button(
                             label=f"Scarica Attività Critiche (Excel)",
                             data=excel_data_crit,
@@ -754,14 +747,13 @@ if current_file_to_process is not None:
                         )
                         
                 except Exception as analysis_error_crit:
-                    st.error(f"Errore durante l'analisi del percorso critico: {analysis_error_crit}")
+                    st.error(f"Errore during l'analisi del percorso critico: {analysis_error_crit}")
                     st.error(traceback.format_exc())
         # --- FINE NUOVA SEZIONE ---
 
-        # --- [MODIFICATO v20.2] Debug spostati qui (indentazione corretta) ---
+        # --- [MODIFICATO v20.1] Debug spostati qui (indentazione corretta) ---
         st.markdown("---")
-        with st.expander("🔍 Area Debug (Avanzato)", collapsed=True):
-            st.markdown("##### Debug: Classificazione Risorse")
+        with st.expander("🔍 Debug: Classificazione Risorse"):
             df_res_class = st.session_state.get('resource_classification_debug')
             if df_res_class is not None and not df_res_class.empty:
                 st.write("Elenco di tutte le risorse trovate e come sono state classificate (Logica: Mezzi prima di Manodopera):")
@@ -773,11 +765,11 @@ if current_file_to_process is not None:
             else:
                 st.warning("Nessuna risorsa trovata o mappa non generata.")
 
+        # --- Debug Section (Invariata) ---
+        # ... (Codice invariato) ...
+        debug_text = st.session_state.get('debug_raw_text')
+        if debug_text:
             st.markdown("---")
-            st.markdown("##### Dati Grezzi per Debug (prime 50 righe del file)")
-            debug_text = st.session_state.get('debug_raw_text')
-            if debug_text:
+            with st.expander("🔍 Dati Grezzi per Debug (prime 50 righe del file)"):
                 st.code(debug_text, language='xml')
-            else:
-                st.info("Dati grezzi non disponibili.")
         # --- FINE MODIFICA ---
