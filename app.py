@@ -1,4 +1,4 @@
-# --- v20.2 (Correzione Indentazione Debug + Aggiunta Percorso Critico) ---
+# --- v20.2 (Base v19.12 + Aggiunta Analisi Percorso Critico + Correzione Indentazione Debug) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -67,6 +67,7 @@ st.markdown("## 🚆 InfraTrack v20.2") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
+# ... (Codice invariato v17.9) ...
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 col_btn_1, col_btn_2, col_btn_3 = st.columns([0.1, 0.2, 0.7])
@@ -83,6 +84,7 @@ with col_btn_2:
         st.cache_data.clear(); st.toast("Cache dei dati svuotata! I dati verranno ricalcolati alla prossima analisi.", icon="✅")
 
 # --- CARICAMENTO FILE ---
+# ... (Codice invariato v17.9) ...
 st.markdown("---"); st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
 uploaded_file = st.file_uploader("Seleziona il file .XML...", type=["xml"], label_visibility="collapsed", key=uploader_key)
@@ -92,6 +94,8 @@ if uploaded_file is not None and uploaded_file != st.session_state.get('uploaded
 elif 'uploaded_file_state' not in st.session_state: uploaded_file = None
 
 # --- FUNZIONI HELPER ---
+# ... (get_minutes_per_day, format_duration_from_xml, get_tasks_to_distribute_for_sil, get_relevant_summary_name invariate) ...
+# ... (classify_resource, extract_timephased_work invariate da v19.8) ...
 @st.cache_data
 def get_minutes_per_day(_tree, _ns):
     minutes_per_day = 480
@@ -354,7 +358,6 @@ if current_file_to_process is not None:
     if st.session_state.get('file_processed_success', False):
 
         # --- Sezione 2 (Invariata) ---
-        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 2. Analisi Preliminare"); st.markdown("##### 📄 Informazioni Generali dell'Appalto")
         project_name = st.session_state.get('project_name', "N/D"); formatted_cost = st.session_state.get('formatted_cost', "N/D")
         col1_disp, col2_disp = st.columns(2);
@@ -371,7 +374,6 @@ if current_file_to_process is not None:
 
 
         # --- Sezione 3: Selezione Periodo e Analisi ---
-        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
         if not default_start: default_start = date.today()
@@ -393,7 +395,6 @@ if current_file_to_process is not None:
 
         # --- Analisi Curva S (Codice invariato da v18.3) ---
         if st.button("📈 Avvia Analisi Curva S", key="analyze_scurve"):
-            # ... (Codice Analisi SIL invariato) ...
             all_tasks_dataframe = st.session_state.get('all_tasks_data'); wbs_name_map = st.session_state.get('wbs_name_map', {})
             if all_tasks_dataframe is None or all_tasks_dataframe.empty: st.error("Errore: Dati attività non trovati.")
             elif not wbs_name_map: st.error("Errore: Mappa WBS->Nome non trovata.")
@@ -678,7 +679,7 @@ if current_file_to_process is not None:
                 except Exception as analysis_error_hist:
                     st.error(f"Errore durante l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
-
+        
         # --- [NUOVO v20.1] Sezione Analisi Percorso Critico ---
         st.markdown("---")
         st.markdown("###### ⛓️ Analisi Percorso Critico")
@@ -746,14 +747,13 @@ if current_file_to_process is not None:
                         )
                         
                 except Exception as analysis_error_crit:
-                    st.error(f"Errore durante l'analisi del percorso critico: {analysis_error_crit}")
+                    st.error(f"Errore during l'analisi del percorso critico: {analysis_error_crit}")
                     st.error(traceback.format_exc())
         # --- FINE NUOVA SEZIONE ---
 
         # --- [MODIFICATO v20.1] Debug spostati qui (indentazione corretta) ---
         st.markdown("---")
-        with st.expander("🔍 Area Debug (Avanzato)", collapsed=True):
-            st.markdown("##### Debug: Classificazione Risorse")
+        with st.expander("🔍 Debug: Classificazione Risorse"):
             df_res_class = st.session_state.get('resource_classification_debug')
             if df_res_class is not None and not df_res_class.empty:
                 st.write("Elenco di tutte le risorse trovate e come sono state classificate (Logica: Mezzi prima di Manodopera):")
@@ -765,11 +765,11 @@ if current_file_to_process is not None:
             else:
                 st.warning("Nessuna risorsa trovata o mappa non generata.")
 
+        # --- Debug Section (Invariata) ---
+        # ... (Codice invariato) ...
+        debug_text = st.session_state.get('debug_raw_text')
+        if debug_text:
             st.markdown("---")
-            st.markdown("##### Dati Grezzi per Debug (prime 50 righe del file)")
-            debug_text = st.session_state.get('debug_raw_text')
-            if debug_text:
+            with st.expander("🔍 Dati Grezzi per Debug (prime 50 righe del file)"):
                 st.code(debug_text, language='xml')
-            else:
-                st.info("Dati grezzi non disponibili.")
         # --- FINE MODIFICA ---
