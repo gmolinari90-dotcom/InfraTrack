@@ -1,4 +1,4 @@
-# --- v20.2 (Base v19.12 + Aggiunta Analisi Percorso Critico + Correzione Indentazione Debug) ---
+# --- v20.2 (Base v19.12 + Aggiunta Analisi Percorso Critico) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -21,6 +21,7 @@ import openpyxl.utils
 import plotly.express as px
 
 # --- Imposta Locale Italiano ---
+# ... (Codice invariato v17.13) ...
 _locale_warning_shown = False
 try: locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
 except locale.Error:
@@ -36,6 +37,7 @@ except locale.Error:
 st.set_page_config(page_title="InfraTrack v20.2", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
+# ... (CSS invariato v17.12) ...
 st.markdown("""
 <style>
      .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button { font-size: 0.85rem !important; }
@@ -358,6 +360,7 @@ if current_file_to_process is not None:
     if st.session_state.get('file_processed_success', False):
 
         # --- Sezione 2 (Invariata) ---
+        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 2. Analisi Preliminare"); st.markdown("##### 📄 Informazioni Generali dell'Appalto")
         project_name = st.session_state.get('project_name', "N/D"); formatted_cost = st.session_state.get('formatted_cost', "N/D")
         col1_disp, col2_disp = st.columns(2);
@@ -374,6 +377,7 @@ if current_file_to_process is not None:
 
 
         # --- Sezione 3: Selezione Periodo e Analisi ---
+        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
         if not default_start: default_start = date.today()
@@ -727,11 +731,13 @@ if current_file_to_process is not None:
                         st.markdown(f"###### Attività Critiche e Quasi-Critiche nel Periodo (Flessibilità <= {slack_threshold} giorni)")
                         
                         df_display_crit = critical_tasks_in_period.copy()
+                        df_display_crit['Start_Date'] = pd.to_datetime(df_display_crit['Start']) # Mantieni data per sort
                         df_display_crit['Start'] = df_display_crit['Start'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
                         df_display_crit['Finish'] = df_display_crit['Finish'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
                         
-                        cols_to_show = ['UID', 'Name', 'Start', 'Finish', 'Duration', 'WBS', 'TotalSlackDays']
-                        st.dataframe(df_display_crit[cols_to_show].sort_values(by='Start'), use_container_width=True, hide_index=True)
+                        # --- [MODIFICATO v20.2] Ordine colonne come richiesto ---
+                        cols_to_show = ['WBS', 'Name', 'Duration', 'Start', 'Finish', 'TotalSlackDays']
+                        st.dataframe(df_display_crit[cols_to_show].sort_values(by='Start_Date'), use_container_width=True, hide_index=True)
 
                         # Bottone Download
                         output_crit = BytesIO()
@@ -747,11 +753,11 @@ if current_file_to_process is not None:
                         )
                         
                 except Exception as analysis_error_crit:
-                    st.error(f"Errore during l'analisi del percorso critico: {analysis_error_crit}")
+                    st.error(f"Errore durante l'analisi del percorso critico: {analysis_error_crit}")
                     st.error(traceback.format_exc())
         # --- FINE NUOVA SEZIONE ---
 
-        # --- [MODIFICATO v20.1] Debug spostati qui (indentazione corretta) ---
+        # --- [MODIFICATO v20.2] Blocchi Debug SPOSTATI QUI (indentazione corretta) ---
         st.markdown("---")
         with st.expander("🔍 Debug: Classificazione Risorse"):
             df_res_class = st.session_state.get('resource_classification_debug')
