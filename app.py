@@ -1,4 +1,4 @@
-# --- v20.3 (Correzione Bug Parsing TotalSlack, Correzione Indentazione Debug) ---
+# --- v20.3 (Correzione Bug NameError e Indentazione Debug) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -21,6 +21,7 @@ import openpyxl.utils
 import plotly.express as px
 
 # --- Imposta Locale Italiano ---
+# ... (Codice invariato v17.13) ...
 _locale_warning_shown = False
 try: locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
 except locale.Error:
@@ -36,6 +37,7 @@ except locale.Error:
 st.set_page_config(page_title="InfraTrack v20.3", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
+# ... (CSS invariato v17.12) ...
 st.markdown("""
 <style>
      .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button { font-size: 0.85rem !important; }
@@ -696,7 +698,7 @@ if current_file_to_process is not None:
                     st.error(f"Errore durante l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
         
-        # --- [NUOVO v20.2] Sezione Analisi Percorso Critico ---
+        # --- [NUOVO v20.3] Sezione Analisi Percorso Critico ---
         st.markdown("---")
         st.markdown("###### ⛓️ Analisi Percorso Critico")
         
@@ -730,12 +732,13 @@ if current_file_to_process is not None:
                         # Filtro 1: Non di riepilogo
                         tasks_df_crit = tasks_df_crit[tasks_df_crit['Summary'] == False]
                         
-                        # Filtro 2: Flessibilità Totale
-                        # Usa la variabile 'slack_threshold' dall'input number
+                        # Filtro 2: Flessibilità Totale (USA LA VARIABILE 'slack_threshold')
                         tasks_df_crit = tasks_df_crit[tasks_df_crit['TotalSlackDays'] <= slack_threshold]
                         
                         # Filtro 3: Sovrapposizione con periodo selezionato
-                        mask_overlap = (tasks_df_crit['Start'] <= selected_finish_date) & (tasks_df_crit['Finish'] >= selected_start_date)
+                        mask_overlap = (tasks_df_crit['Start'].notna()) & (tasks_df_crit['Finish'].notna()) & \
+                                       (tasks_df_crit['Start'] <= selected_finish_date) & \
+                                       (tasks_df_crit['Finish'] >= selected_start_date)
                         critical_tasks_in_period = tasks_df_crit[mask_overlap]
 
                     if critical_tasks_in_period.empty:
@@ -754,8 +757,8 @@ if current_file_to_process is not None:
                         # --- FINE CORREZIONE ---
 
                         # Ora formatta le date per la visualizzazione
-                        df_display_crit['Start'] = df_display_hist['Start'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
-                        df_display_crit['Finish'] = df_display_hist['Finish'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
+                        df_display_crit['Start'] = df_display_crit['Start'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
+                        df_display_crit['Finish'] = df_display_crit['Finish'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
                         
                         # 3. Colonne da mostrare (ordinate come da richiesta)
                         cols_to_show = ['WBS', 'Name', 'Duration', 'Start', 'Finish', 'TotalSlackDays']
@@ -797,7 +800,6 @@ if current_file_to_process is not None:
                 st.warning("Nessuna risorsa trovata o mappa non generata.")
 
         # --- Debug Section (Invariata) ---
-        # ... (Codice invariato) ...
         debug_text = st.session_state.get('debug_raw_text')
         if debug_text:
             st.markdown("---")
