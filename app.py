@@ -1,4 +1,4 @@
-# --- v20.3 (Base v19.12 + Correzione Indentazione Debug + Aggiunta Percorso Critico) ---
+# --- v20.3 (Correzione Bug Parsing TotalSlack, Correzione Indentazione Debug) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
