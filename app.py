@@ -1,4 +1,4 @@
-# --- v20.1 (Base v19.12 + Percorso Critico + Correzione Indentazione Debug) ---
+# --- v20.2 (Base v19.12 + Percorso Critico + Correzione Indentazione Debug) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -34,7 +34,7 @@ except locale.Error:
                 _locale_warning_shown = True
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v20.1", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v20.2", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 # ... (CSS invariato v17.12) ...
@@ -65,7 +65,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v20.1") # Version updated
+st.markdown("## 🚆 InfraTrack v20.2") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -360,7 +360,6 @@ if current_file_to_process is not None:
     if st.session_state.get('file_processed_success', False):
 
         # --- Sezione 2 (Invariata) ---
-        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 2. Analisi Preliminare"); st.markdown("##### 📄 Informazioni Generali dell'Appalto")
         project_name = st.session_state.get('project_name', "N/D"); formatted_cost = st.session_state.get('formatted_cost', "N/D")
         col1_disp, col2_disp = st.columns(2);
@@ -377,7 +376,6 @@ if current_file_to_process is not None:
 
 
         # --- Sezione 3: Selezione Periodo e Analisi ---
-        # ... (Codice invariato) ...
         st.markdown("---"); st.markdown("#### 3. Analisi Avanzata")
         default_start = st.session_state.get('project_start_date', date.today()); default_finish = st.session_state.get('project_finish_date', date.today() + timedelta(days=365))
         if not default_start: default_start = date.today()
@@ -397,7 +395,7 @@ if current_file_to_process is not None:
         # --- Analisi Dettagliate ---
         st.markdown("---"); st.markdown("##### 📊 Analisi Dettagliate")
 
-        # --- Analisi Curva S (Codice invariato da v18.3) ---
+        # --- Analisi Curva S (Codice v19.12) ---
         if st.button("📈 Avvia Analisi Curva S", key="analyze_scurve"):
             all_tasks_dataframe = st.session_state.get('all_tasks_data'); wbs_name_map = st.session_state.get('wbs_name_map', {})
             if all_tasks_dataframe is None or all_tasks_dataframe.empty: st.error("Errore: Dati attività non trovati.")
@@ -490,7 +488,7 @@ if current_file_to_process is not None:
                             else: st.warning(f"Nessun dato di costo trovato nel periodo selezionato.")
                 except Exception as analysis_error: st.error(f"Errore Analisi Avanzata: {analysis_error}"); st.error(traceback.format_exc())
 
-        # --- [MODIFICATO v20.1] Sezione Istogrammi Risorse (con Formato Mese ITA e Arrotondamento) ---
+        # --- [MODIFICATO v20.1] Sezione Istogrammi Risorse ---
         st.markdown("---")
         st.markdown("###### 📊 Istogrammi Risorse (Unità Medie Giornaliere eq. 8h)")
 
@@ -596,7 +594,7 @@ if current_file_to_process is not None:
                                 output_hist = BytesIO()
                                 df_export_hist = aggregated_hist.copy()
                                 rename_map_excel_hist = {'Periodo': axis_title_hist, 'AvgDailyUnits_Rounded': col_name_hist, 'ResourceName': 'Risorsa'}
-                                #df_export_hist['Date'] = df_export_hist['Date'].dt.strftime(date_format_excel_hist).str.capitalize() if aggregation_level=='Mensile' else df_export_hist['Date'].dt.strftime(date_format_excel_hist)
+                                # df_export_hist['Date'] = df_export_hist['Date'].dt.strftime(date_format_excel_hist).str.capitalize() if aggregation_level=='Mensile' else df_export_hist['Date'].dt.strftime(date_format_excel_hist)
                                 df_to_write_hist = df_export_hist[['Periodo', 'ResourceName', 'AvgDailyUnits_Rounded']]
                                 df_to_write_hist = df_to_write_hist.rename(columns=rename_map_excel_hist)
 
@@ -731,7 +729,6 @@ if current_file_to_process is not None:
                 try:
                     with st.spinner(f"Calcolo attività critiche (Flessibilità <= {slack_threshold} giorni)..."):
                         
-                        # Assicura che le date siano nel formato corretto per il confronto
                         tasks_df_crit = all_tasks_df.copy()
                         tasks_df_crit['Start'] = pd.to_datetime(tasks_df_crit['Start'], errors='coerce').dt.date
                         tasks_df_crit['Finish'] = pd.to_datetime(tasks_df_crit['Finish'], errors='coerce').dt.date
@@ -743,7 +740,6 @@ if current_file_to_process is not None:
                         tasks_df_crit = tasks_df_crit[tasks_df_crit['TotalSlackDays'] <= slack_threshold]
                         
                         # Filtro per sovrapposizione con periodo selezionato
-                        # (Start <= Fine_Periodo) AND (Finish >= Inizio_Periodo)
                         mask_overlap = (tasks_df_crit['Start'] <= selected_finish_date) & (tasks_df_crit['Finish'] >= selected_start_date)
                         critical_tasks_in_period = tasks_df_crit[mask_overlap]
 
@@ -752,21 +748,16 @@ if current_file_to_process is not None:
                     else:
                         st.markdown(f"###### Attività Critiche e Quasi-Critiche nel Periodo (Flessibilità <= {slack_threshold} giorni)")
                         
-                        # Formatta le date per la visualizzazione
                         df_display_crit = critical_tasks_in_period.copy()
-                        df_display_crit['Start_Date'] = df_display_crit['Start'] # Mantieni oggetto data per sort
                         df_display_crit['Start'] = df_display_crit['Start'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
                         df_display_crit['Finish'] = df_display_crit['Finish'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
                         
-                        # Colonne da mostrare
                         cols_to_show = ['UID', 'Name', 'Start', 'Finish', 'Duration', 'WBS', 'TotalSlackDays']
-                        st.dataframe(df_display_crit[cols_to_show].sort_values(by='Start_Date'), use_container_width=True, hide_index=True) # Ordina per data
+                        st.dataframe(df_display_crit[cols_to_show].sort_values(by='Start'), use_container_width=True, hide_index=True)
 
-                        # Bottone Download per percorso critico
                         output_crit = BytesIO()
-                        df_excel_crit = df_display_crit[cols_to_show].sort_values(by='Start_Date') # Prepara per excel
                         with pd.ExcelWriter(output_crit, engine='openpyxl') as writer:
-                            df_excel_crit.to_excel(writer, index=False, sheet_name='Attivita_Critiche')
+                            df_display_crit[cols_to_show].to_excel(writer, index=False, sheet_name='Attivita_Critiche')
                         excel_data_crit = output_crit.getvalue()
                         st.download_button(
                             label=f"Scarica Attività Critiche (Excel)",
@@ -780,7 +771,6 @@ if current_file_to_process is not None:
                     st.error(f"Errore durante l'analisi del percorso critico: {analysis_error_crit}")
                     st.error(traceback.format_exc())
         # --- FINE NUOVA SEZIONE ---
-
 
         # --- [MODIFICATO v20.1] Debug Raggruppato e Indentato ---
         st.markdown("---")
