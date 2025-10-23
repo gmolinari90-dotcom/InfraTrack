@@ -1,4 +1,4 @@
-# --- v20.3 (Correzione KeyError Start_Date Percorso Critico) ---
+# --- v20.3 (Base v19.12 + Correzione Indentazione Debug + Aggiunta Percorso Critico) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -36,7 +36,6 @@ except locale.Error:
 st.set_page_config(page_title="InfraTrack v20.3", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
-# ... (CSS invariato v17.12) ...
 st.markdown("""
 <style>
      .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button { font-size: 0.85rem !important; }
@@ -730,7 +729,7 @@ if current_file_to_process is not None:
                         df_display_crit = critical_tasks_in_period.copy()
                         
                         # --- [CORREZIONE v20.3] Crea colonna per sort, POI ordina, POI formatta ---
-                        # 1. Crea colonna per sort
+                        # 1. Crea colonna per sort (usa la data originale)
                         df_display_crit['Start_Date_Sort'] = pd.to_datetime(df_display_crit['Start']) 
                         
                         # 2. Ordina il DataFrame *prima*
@@ -762,11 +761,11 @@ if current_file_to_process is not None:
                         )
                         
                 except Exception as analysis_error_crit:
-                    st.error(f"Errore durante l'analisi del percorso critico: {analysis_error_crit}")
+                    st.error(f"Errore during l'analisi del percorso critico: {analysis_error_crit}")
                     st.error(traceback.format_exc())
         # --- FINE NUOVA SEZIONE ---
 
-        # --- [MODIFICATO v20.2] Debug spostati qui (indentazione corretta) ---
+        # --- [MODIFICATO v20.3] Debug spostati qui (indentazione corretta) ---
         st.markdown("---")
         with st.expander("🔍 Debug: Classificazione Risorse"):
             df_res_class = st.session_state.get('resource_classification_debug')
