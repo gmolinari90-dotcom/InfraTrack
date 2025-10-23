@@ -1,4 +1,4 @@
-# --- v20.2 (Base v19.12 + Aggiunta Analisi Percorso Critico) ---
+# --- v20.2 (Correzione Indentazione Debug + Aggiunta Percorso Critico) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -21,7 +21,6 @@ import openpyxl.utils
 import plotly.express as px
 
 # --- Imposta Locale Italiano ---
-# ... (Codice invariato v17.13) ...
 _locale_warning_shown = False
 try: locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
 except locale.Error:
@@ -37,7 +36,6 @@ except locale.Error:
 st.set_page_config(page_title="InfraTrack v20.2", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
-# ... (CSS invariato v17.12) ...
 st.markdown("""
 <style>
      .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button { font-size: 0.85rem !important; }
@@ -69,7 +67,6 @@ st.markdown("## 🚆 InfraTrack v20.2") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
-# ... (Codice invariato v17.9) ...
 if 'widget_key_counter' not in st.session_state: st.session_state.widget_key_counter = 0
 if 'file_processed_success' not in st.session_state: st.session_state.file_processed_success = False
 col_btn_1, col_btn_2, col_btn_3 = st.columns([0.1, 0.2, 0.7])
@@ -86,7 +83,6 @@ with col_btn_2:
         st.cache_data.clear(); st.toast("Cache dei dati svuotata! I dati verranno ricalcolati alla prossima analisi.", icon="✅")
 
 # --- CARICAMENTO FILE ---
-# ... (Codice invariato v17.9) ...
 st.markdown("---"); st.markdown("#### 1. Carica la Baseline di Riferimento")
 uploader_key = f"file_uploader_{st.session_state.widget_key_counter}"
 uploaded_file = st.file_uploader("Seleziona il file .XML...", type=["xml"], label_visibility="collapsed", key=uploader_key)
@@ -96,8 +92,6 @@ if uploaded_file is not None and uploaded_file != st.session_state.get('uploaded
 elif 'uploaded_file_state' not in st.session_state: uploaded_file = None
 
 # --- FUNZIONI HELPER ---
-# ... (get_minutes_per_day, format_duration_from_xml, get_tasks_to_distribute_for_sil, get_relevant_summary_name invariate) ...
-# ... (classify_resource, extract_timephased_work invariate da v19.8) ...
 @st.cache_data
 def get_minutes_per_day(_tree, _ns):
     minutes_per_day = 480
@@ -682,7 +676,7 @@ if current_file_to_process is not None:
 
 
                 except Exception as analysis_error_hist:
-                    st.error(f"Errore during l'analisi degli istogrammi: {analysis_error_hist}")
+                    st.error(f"Errore durante l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
 
         # --- [NUOVO v20.1] Sezione Analisi Percorso Critico ---
@@ -756,7 +750,7 @@ if current_file_to_process is not None:
                     st.error(traceback.format_exc())
         # --- FINE NUOVA SEZIONE ---
 
-        # --- [MODIFICATO v20.1] Debug Raggruppato e Indentato ---
+        # --- [MODIFICATO v20.1] Debug spostati qui (indentazione corretta) ---
         st.markdown("---")
         with st.expander("🔍 Area Debug (Avanzato)", collapsed=True):
             st.markdown("##### Debug: Classificazione Risorse")
