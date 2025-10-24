@@ -732,7 +732,7 @@ if current_file_to_process is not None:
                         
                         # Filtro 2: Flessibilità Totale (USA LA VARIABILE 'slack_threshold')
                         # Ora funziona perché TotalSlackDays è stato letto correttamente
-                        tasks_df_crit_filtered = tasks_df_crit[tasks_df_crit['TotalSlackDays'] <= slack_threshold]
+                        tasks_df_crit_filtered = tasks_df_crit[tasks_df_crit['TotalSlackDays'] <= slack_threshold].copy()
                         
                         # Filtro 3: Sovrapposizione con periodo selezionato
                         mask_overlap = (tasks_df_crit_filtered['Start'].notna()) & (tasks_df_crit_filtered['Finish'].notna()) & \
@@ -747,13 +747,11 @@ if current_file_to_process is not None:
                         
                         df_display_crit = critical_tasks_in_period.copy()
                         
-                        # --- [CORREZIONE v20.3] Crea colonna per sort, POI ordina, POI formatta ---
                         # 1. Crea colonna per sort (usa la data originale)
                         df_display_crit['Start_Date_Sort'] = pd.to_datetime(df_display_crit['Start']) 
                         
                         # 2. Ordina il DataFrame *prima*
                         df_display_crit = df_display_crit.sort_values(by='Start_Date_Sort')
-                        # --- FINE CORREZIONE ---
 
                         # Ora formatta le date per la visualizzazione
                         df_display_crit['Start'] = df_display_crit['Start'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else 'N/D')
