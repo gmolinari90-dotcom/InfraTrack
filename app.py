@@ -21,7 +21,6 @@ import openpyxl.utils
 import plotly.express as px
 
 # --- Imposta Locale Italiano ---
-# ... (Codice invariato v17.13) ...
 _locale_warning_shown = False
 try: locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
 except locale.Error:
@@ -37,7 +36,6 @@ except locale.Error:
 st.set_page_config(page_title="InfraTrack v20.4", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
-# ... (CSS invariato v17.12) ...
 st.markdown("""
 <style>
      .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp .stDataFrame, .stApp .stButton>button { font-size: 0.85rem !important; }
@@ -287,28 +285,28 @@ if current_file_to_process is not None:
                     wbs = task.findtext('msp:WBS', namespaces=ns) or ""
                     
                     # --- [CORREZIONE v20.4] Parsing TotalSlack ---
-                    total_slack_minutes_str = task.findtext('msp:TotalSlack', namespaces=ns) or "0"
+                    total_slack_str = task.findtext('msp:TotalSlack', namespaces=ns) or "PT0S" # Default a 'PT0S' (0)
                     is_summary_str = task.findtext('msp:Summary', namespaces=ns) or '0'
                     is_summary = is_summary_str == '1'
                     total_slack_days = 0
-                    if total_slack_minutes_str:
-                        try:
-                            slack_minutes = 0
-                            if 'PT' in total_slack_minutes_str:
-                                # È un formato ISO Duration (es. PT8H0M0S)
-                                if not total_slack_minutes_str.startswith('P'):
-                                    total_slack_minutes_str = 'P' + total_slack_minutes_str
-                                duration_obj = isodate.parse_duration(total_slack_minutes_str)
-                                slack_minutes = duration_obj.total_seconds() / 60.0
-                            else:
-                                # È un numero (minuti)
-                                slack_minutes = float(total_slack_minutes_str)
+                    
+                    try:
+                        slack_minutes = 0
+                        if 'PT' in total_slack_str:
+                            # È un formato ISO Duration (es. PT8H0M0S)
+                            if not total_slack_str.startswith('P'):
+                                total_slack_str = 'P' + total_slack_str
+                            duration_obj = isodate.parse_duration(total_slack_str)
+                            slack_minutes = duration_obj.total_seconds() / 60.0
+                        else:
+                            # È un numero (vecchio formato, minuti)
+                            slack_minutes = float(total_slack_str)
 
-                            mpd = st.session_state.get('minutes_per_day', 480)
-                            if mpd > 0:
-                                total_slack_days = round(slack_minutes / mpd) # Arrotondamento standard
-                        except Exception: 
-                            total_slack_days = 0 # Default a 0 in caso di errore
+                        mpd = st.session_state.get('minutes_per_day', 480)
+                        if mpd > 0:
+                            total_slack_days = round(slack_minutes / mpd) # Arrotondamento standard
+                    except Exception: 
+                        total_slack_days = 0 # Default a 0 in caso di errore
                     # --- FINE CORREZIONE ---
 
                     if wbs and name: wbs_name_map[wbs] = name
@@ -695,7 +693,7 @@ if current_file_to_process is not None:
 
 
                 except Exception as analysis_error_hist:
-                    st.error(f"Errore during l'analisi degli istogrammi: {analysis_error_hist}")
+                    st.error(f"Errore durante l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
         
         # --- [NUOVO v20.3] Sezione Analisi Percorso Critico ---
@@ -733,13 +731,14 @@ if current_file_to_process is not None:
                         tasks_df_crit = tasks_df_crit[tasks_df_crit['Summary'] == False]
                         
                         # Filtro 2: Flessibilità Totale (USA LA VARIABILE 'slack_threshold')
-                        tasks_df_crit = tasks_df_crit[tasks_df_crit['TotalSlackDays'] <= slack_threshold]
+                        # Ora funziona perché TotalSlackDays è stato letto correttamente
+                        tasks_df_crit_filtered = tasks_df_crit[tasks_df_crit['TotalSlackDays'] <= slack_threshold]
                         
                         # Filtro 3: Sovrapposizione con periodo selezionato
-                        mask_overlap = (tasks_df_crit['Start'].notna()) & (tasks_df_crit['Finish'].notna()) & \
-                                       (tasks_df_crit['Start'] <= selected_finish_date) & \
-                                       (tasks_df_crit['Finish'] >= selected_start_date)
-                        critical_tasks_in_period = tasks_df_crit[mask_overlap]
+                        mask_overlap = (tasks_df_crit_filtered['Start'].notna()) & (tasks_df_crit_filtered['Finish'].notna()) & \
+                                       (tasks_df_crit_filtered['Start'] <= selected_finish_date) & \
+                                       (tasks_df_crit_filtered['Finish'] >= selected_start_date)
+                        critical_tasks_in_period = tasks_df_crit_filtered[mask_overlap]
 
                     if critical_tasks_in_period.empty:
                         st.warning(f"Nessuna attività (non di riepilogo) trovata con Flessibilità Totale <= {slack_threshold} giorni nel periodo selezionato.")
@@ -779,6 +778,12 @@ if current_file_to_process is not None:
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             key="download_critical"
                         )
+                        
+                        # --- [NUOVO v20.3] Debug per Percorso Critico ---
+                        with st.expander("🔍 Debug: Dati Percorso Critico (pre-filtro date)"):
+                            st.write(f"Attività trovate con Flessibilità <= {slack_threshold} (prima del filtro sul periodo)")
+                            st.dataframe(tasks_df_crit_filtered[['WBS', 'Name', 'Start', 'Finish', 'TotalSlackDays']], use_container_width=True)
+                        # --- FINE DEBUG ---
                         
                 except Exception as analysis_error_crit:
                     st.error(f"Errore durante l'analisi del percorso critico: {analysis_error_crit}")
