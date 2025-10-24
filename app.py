@@ -696,7 +696,7 @@ if current_file_to_process is not None:
                     st.error(f"Errore durante l'analisi degli istogrammi: {analysis_error_hist}")
                     st.error(traceback.format_exc())
         
-        # --- [NUOVO v20.3] Sezione Analisi Percorso Critico ---
+        # --- [NUOVO v20.4] Sezione Analisi Percorso Critico ---
         st.markdown("---")
         st.markdown("###### ⛓️ Analisi Percorso Critico")
         
@@ -779,7 +779,7 @@ if current_file_to_process is not None:
                             key="download_critical"
                         )
                         
-                        # --- [NUOVO v20.3] Debug per Percorso Critico ---
+                        # --- [NUOVO v20.4] Debug per Percorso Critico ---
                         with st.expander("🔍 Debug: Dati Percorso Critico (pre-filtro date)"):
                             st.write(f"Attività trovate con Flessibilità <= {slack_threshold} (prima del filtro sul periodo)")
                             st.dataframe(tasks_df_crit_filtered[['WBS', 'Name', 'Start', 'Finish', 'TotalSlackDays']], use_container_width=True)
@@ -790,7 +790,7 @@ if current_file_to_process is not None:
                     st.error(traceback.format_exc())
         # --- FINE NUOVA SEZIONE ---
 
-        # --- [MODIFICATO v20.3] Debug spostati qui (indentazione corretta) ---
+        # --- [MODIFICATO v20.4] Debug spostati qui (indentazione corretta) ---
         st.markdown("---")
         with st.expander("🔍 Debug: Classificazione Risorse"):
             df_res_class = st.session_state.get('resource_classification_debug')
