@@ -1,4 +1,4 @@
-# --- v20.4 (Correzione Bug Parsing TotalSlack, Correzione Indentazione Debug) ---
+# --- v20.5 (Correzione Lettura Flessibilità (Late/Early Finish), Correzione Indentazione Debug) ---
 import streamlit as st
 from lxml import etree
 import pandas as pd
@@ -33,7 +33,7 @@ except locale.Error:
                 _locale_warning_shown = True
 
 # --- CONFIGURAZIONE DELLA PAGINA ---
-st.set_page_config(page_title="InfraTrack v20.4", page_icon="🚆", layout="wide") # Version updated
+st.set_page_config(page_title="InfraTrack v20.5", page_icon="🚆", layout="wide") # Version updated
 
 # --- CSS ---
 st.markdown("""
@@ -63,7 +63,7 @@ st.markdown("""
 
 
 # --- TITOLO E HEADER ---
-st.markdown("## 🚆 InfraTrack v20.4") # Version updated
+st.markdown("## 🚆 InfraTrack v20.5") # Version updated
 st.caption("La tua centrale di controllo per progetti infrastrutturali")
 
 # --- GESTIONE RESET E CACHE ---
@@ -284,29 +284,23 @@ if current_file_to_process is not None:
                     is_milestone_text = (task.findtext('msp:Milestone', namespaces=ns) or '0').lower(); is_milestone = is_milestone_text == '1' or is_milestone_text == 'true'
                     wbs = task.findtext('msp:WBS', namespaces=ns) or ""
                     
-                    # --- [CORREZIONE v20.4] Parsing TotalSlack ---
-                    total_slack_str = task.findtext('msp:TotalSlack', namespaces=ns) or "PT0S" # Default a 'PT0S' (0)
+                    # --- [CORREZIONE v20.5] Parsing TotalSlack basato su Early/Late Finish ---
+                    early_finish_str = task.findtext('msp:EarlyFinish', namespaces=ns)
+                    late_finish_str = task.findtext('msp:LateFinish', namespaces=ns)
                     is_summary_str = task.findtext('msp:Summary', namespaces=ns) or '0'
                     is_summary = is_summary_str == '1'
                     total_slack_days = 0
-                    
-                    try:
-                        slack_minutes = 0
-                        if 'PT' in total_slack_str:
-                            # È un formato ISO Duration (es. PT8H0M0S)
-                            if not total_slack_str.startswith('P'):
-                                total_slack_str = 'P' + total_slack_str
-                            duration_obj = isodate.parse_duration(total_slack_str)
-                            slack_minutes = duration_obj.total_seconds() / 60.0
-                        else:
-                            # È un numero (vecchio formato, minuti)
-                            slack_minutes = float(total_slack_str)
 
-                        mpd = st.session_state.get('minutes_per_day', 480)
-                        if mpd > 0:
-                            total_slack_days = round(slack_minutes / mpd) # Arrotondamento standard
-                    except Exception: 
-                        total_slack_days = 0 # Default a 0 in caso di errore
+                    try:
+                        if early_finish_str and late_finish_str:
+                            early_finish = datetime.fromisoformat(early_finish_str).date()
+                            late_finish = datetime.fromisoformat(late_finish_str).date()
+                            total_slack_days = (late_finish - early_finish).days
+                        else:
+                            # Fallback se le date non ci sono (es. attività non schedulata)
+                            total_slack_days = 0 
+                    except Exception:
+                        total_slack_days = 0
                     # --- FINE CORREZIONE ---
 
                     if wbs and name: wbs_name_map[wbs] = name
